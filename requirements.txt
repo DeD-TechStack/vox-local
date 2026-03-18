@@ -15,3 +15,6 @@ pycaw>=20230407          # Windows volume control
 
 # System info
 psutil>=5.9.0
+
+# Logging
+colorama>=0.4.6

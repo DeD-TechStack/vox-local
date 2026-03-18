@@ -12,8 +12,10 @@ DEFAULT_CONFIG = {
     "ollama_url": "http://localhost:11434",
     "ollama_model": "qwen2.5:14b",
     "tts_enabled": True,
-    "piper_path": "piper",
-    "voice_model": "en_US-ryan-high.onnx",
+    "piper_path": "piper/piper/piper.exe",
+    "voice_model": "voices/en_US-ryan-high.onnx",
+    "wake_word_enabled": False,
+    "wake_word": "hey vox",
     "mic_device": None,
     "output_device": None,
     "search_dirs": [
@@ -71,6 +73,7 @@ class Config:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 yaml.dump(DEFAULT_CONFIG, f, allow_unicode=True, default_flow_style=False)
+            # Use print here because logger may not be initialized yet at config load time
             print(f"[Config] Created default config at {path}")
 
     def get(self, key: str, default: Any = None) -> Any:

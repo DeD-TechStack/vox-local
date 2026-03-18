@@ -8,6 +8,9 @@ import numpy as np
 import sounddevice as sd
 
 from utils.config import Config
+from utils.logger import get_logger
+
+log = get_logger("Speaker")
 
 
 class Speaker:
@@ -20,13 +23,13 @@ class Speaker:
         self.enabled = self.config.get("tts_enabled", True)
         self.output_device = self.config.get("output_device", None)
 
-        # Resolve relative paths against the config file location, not CWD
-        config_dir = os.path.dirname(self.config._path)
+        # Resolve relative paths against the project root (parent of config/)
+        project_root = os.path.dirname(os.path.dirname(self.config._path))
 
         def _resolve(raw: str) -> str:
             if os.path.isabs(raw):
                 return raw
-            return os.path.normpath(os.path.join(config_dir, raw))
+            return os.path.normpath(os.path.join(project_root, raw))
 
         self.piper_path = _resolve(self.config.get("piper_path", "piper"))
         self.voice_model = _resolve(self.config.get("voice_model", "en_US-ryan-high.onnx"))
@@ -58,9 +61,9 @@ class Speaker:
                     self._play_wav(wav_path)
 
             except FileNotFoundError:
-                print("[Speaker] Piper not found. Check piper_path in settings.yaml")
+                log.error("Piper not found. Check piper_path in settings.yaml")
             except Exception as e:
-                print(f"[Speaker] TTS error: {e}")
+                log.error(f"TTS error: {e}")
             finally:
                 if wav_path and os.path.exists(wav_path):
                     os.unlink(wav_path)
@@ -100,6 +103,6 @@ class Speaker:
             sd.play(audio, samplerate=target_rate, device=self.output_device)
             sd.wait()
         except Exception as e:
-            print(f"[Speaker] Output device failed ({e}), falling back to default")
+            log.warning(f"Output device failed ({e}), falling back to default")
             sd.play(audio, samplerate=framerate, device=None)
             sd.wait()

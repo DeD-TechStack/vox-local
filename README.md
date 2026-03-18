@@ -1,5 +1,7 @@
 # VOX
 
+**Topics:** voice-assistant, local-ai, ollama, whisper, python, offline-ai, piper-tts
+
 A fully **offline**, **privacy-first** voice assistant for your PC — no cloud APIs, no data leaving your machine.
 
 Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), [Ollama](https://ollama.com), and [Piper TTS](https://github.com/rhasspy/piper).
@@ -7,6 +9,15 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## Why VOX?
+
+- **100% offline** — speech recognition, reasoning, and TTS all run locally
+- **No cloud APIs** — your voice never leaves your machine
+- **Works without internet** after initial model setup
+- **Declarative permission system** — the AI can only run actions you explicitly allow; no arbitrary shell access
 
 ---
 
@@ -18,6 +29,7 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 - **Permission system** — the AI can only run actions you explicitly allow in `settings.yaml`
 - **Floating HUD** — minimal overlay, always on top, draggable
 - **Fully configurable** — model, hotkey, language, aliases, allowed actions
+- **Wake word mode** — optional always-on mode, no external library needed
 
 ---
 
@@ -33,14 +45,21 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 
 ## Setup
 
-### 1. Install Python dependencies
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/your-username/vox.git
+cd vox
+```
+
+### 2. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 pip install comtypes   # Windows only
 ```
 
-### 2. Pull an Ollama model
+### 3. Pull an Ollama model
 
 ```bash
 ollama pull qwen2.5:14b   # recommended (requires ~9GB VRAM)
@@ -48,13 +67,13 @@ ollama pull qwen2.5:14b   # recommended (requires ~9GB VRAM)
 ollama pull llama3.1:8b   # lighter option
 ```
 
-### 3. Download Piper + voice
+### 4. Download Piper + voice
 
 Download the Piper binary and place it in `piper/piper.exe`.
 Download the voice files and place them in `voices/`:
 
 ```
-vox-assistant/
+vox/
 ├── piper/
 │   └── piper.exe
 └── voices/
@@ -62,7 +81,7 @@ vox-assistant/
     └── en_US-ryan-high.onnx.json
 ```
 
-### 4. Run
+### 5. Run
 
 ```bash
 cd src
@@ -140,16 +159,53 @@ Overlay HUD — shows transcript + response
 | `whisper_model` | `base` | Whisper model size |
 | `ollama_model` | `qwen2.5:14b` | Ollama model to use |
 | `tts_enabled` | `true` | Enable/disable voice responses |
-| `voice_model` | `en_US-ryan-high.onnx` | Piper voice (.onnx path) |
+| `voice_model` | `voices/en_US-ryan-high.onnx` | Piper voice (.onnx path, relative to project root) |
+| `wake_word_enabled` | `false` | Enable always-on wake word mode |
+| `wake_word` | `hey vox` | Phrase to trigger wake word mode |
 | `app_aliases` | see file | Map spoken names to executables |
 | `allowed_actions` | see file | Whitelist of executable actions |
 
 ---
 
+## Troubleshooting
+
+**Ollama not running**
+```
+Error: connection refused
+```
+Start Ollama with:
+```bash
+ollama serve
+```
+
+**CUDA not available**
+VOX falls back to CPU automatically. To force CPU explicitly:
+```yaml
+whisper_device: cpu
+whisper_compute_type: int8
+```
+
+**Piper not found**
+```
+[Speaker] Piper not found. Check piper_path in settings.yaml
+```
+Check that `piper_path` in `config/settings.yaml` points to the correct binary. Default: `piper/piper/piper.exe` (relative to project root).
+
+**No audio input / microphone not detected**
+- Check microphone permissions in your OS settings
+- Run VOX and check the console — it lists all detected devices with their indices
+- Set `mic_device: <index>` in `settings.yaml` to use a specific device
+- On Windows, verify `sounddevice` default input device with:
+  ```python
+  import sounddevice; print(sounddevice.query_devices())
+  ```
+
+---
+
 ## Roadmap
 
+- [x] Wake word support (always-on)
 - [ ] Settings GUI
-- [ ] Wake word support (always-on)
 - [ ] Custom action plugins
 - [ ] Conversation memory / context
 - [ ] Linux audio (PipeWire) improvements

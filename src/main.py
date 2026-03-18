@@ -3,15 +3,18 @@ import os
 import traceback
 
 from utils.config import Config
+from utils.logger import get_logger
+
+log = get_logger("VOX")
 
 
 def load_whisper(config: Config):
     from faster_whisper import WhisperModel
     device = config.get("whisper_device", "cpu")
     compute_type = config.get("whisper_compute_type", "int8")
-    print(f"[VOX] Loading Whisper ({config.get('whisper_model', 'base')}, {device}/{compute_type})...")
+    log.info(f"Loading Whisper ({config.get('whisper_model', 'base')}, {device}/{compute_type})...")
     model = WhisperModel(config.get("whisper_model", "base"), device=device, compute_type=compute_type)
-    print("[VOX] Whisper ready.")
+    log.info("Whisper ready.")
     return model
 
 
@@ -125,7 +128,7 @@ if __name__ == "__main__":
         run_app(config, whisper_model)
     except Exception:
         err = traceback.format_exc()
-        print(err)
+        log.error(err)
         with open(log_path, "w", encoding="utf-8") as f:
             f.write(err)
-        print(f"[VOX] Erro salvo em: {os.path.abspath(log_path)}")
+        log.error(f"Error saved to: {os.path.abspath(log_path)}")

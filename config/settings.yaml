@@ -30,13 +30,15 @@ mic_device: 3
 ollama_model: qwen2.5:3b
 ollama_url: http://localhost:11434
 output_device: 29
-piper_path: ../piper/piper/piper.exe
+piper_path: piper/piper/piper.exe
 search_dirs:
 - ~/Documents
 - ~/Downloads
 - ~/Desktop
 tts_enabled: true
-voice_model: ../voices/en_US-ryan-high.onnx
+voice_model: voices/en_US-ryan-high.onnx
+wake_word: hey vox
+wake_word_enabled: false
 whisper_compute_type: int8
 whisper_device: cpu
 whisper_model: base
