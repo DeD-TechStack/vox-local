@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────
+#  VOX — Configuration
+# ─────────────────────────────────────────────
+
+# Hotkey to hold for voice input
+hotkey: alt
+
+# Transcription language (en = English, pt = Portuguese)
+language: en
+
+# Whisper model size: tiny / base / small / medium / large-v2
+# Larger = more accurate but slower. "base" is a great balance.
+whisper_model: base
+
+# Ollama settings
+ollama_url: http://localhost:11434
+ollama_model: qwen2.5:14b
+
+# Text-to-speech
+tts_enabled: true
+piper_path: ../piper/piper/piper.exe       # path to piper binary
+voice_model: ../voices/en_US-ryan-high.onnx  # piper voice model (.onnx file)
+
+# Directories to search files in
+search_dirs:
+  - ~/Documents
+  - ~/Downloads
+  - ~/Desktop
+
+# App name aliases (what you say → what gets opened)
+app_aliases:
+  spotify: spotify
+  chrome: chrome
+  firefox: firefox
+  discord: discord
+  vscode: code
+  vs code: code
+  notepad: notepad
+  calculator: calc
+  explorer: explorer
+  paint: mspaint
+
+# ─── Permissions ──────────────────────────────
+# Only actions listed here will be executed.
+# Remove any action to block it.
+allowed_actions:
+  - open_app
+  - close_app
+  - set_volume
+  - mute_volume
+  - play_pause_media
+  - next_track
+  - prev_track
+  - search_file
+  - open_url
+  - type_text
+  - take_screenshot
+  - show_time
+  - show_battery
