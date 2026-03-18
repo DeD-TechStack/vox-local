@@ -49,7 +49,7 @@ DEFAULT_CONFIG = {
 class Config:
     def __init__(self, path: str = None):
         if path is None:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             path = os.path.join(base, "config", "settings.yaml")
 
         self._data = dict(DEFAULT_CONFIG)

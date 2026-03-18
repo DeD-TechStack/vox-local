@@ -22,6 +22,7 @@ class Speaker:
 
     def _speak_blocking(self, text: str):
         with self._lock:
+            wav_path = None
             try:
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                     wav_path = f.name
@@ -44,5 +45,5 @@ class Speaker:
             except Exception as e:
                 print(f"[Speaker] TTS error: {e}")
             finally:
-                if os.path.exists(wav_path):
+                if wav_path and os.path.exists(wav_path):
                     os.unlink(wav_path)

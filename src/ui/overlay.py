@@ -30,9 +30,9 @@ class OverlayWindow(QWidget):
         self._container.setFixedSize(340, 160)
         self._container.setStyleSheet("""
             QFrame {
-                background-color: rgba(13, 13, 13, 220);
+                background-color: rgba(13, 11, 18, 220);
                 border-radius: 14px;
-                border: 1px solid rgba(42, 111, 245, 80);
+                border: 1px solid rgba(168, 85, 247, 80);
             }
         """)
 
@@ -46,7 +46,7 @@ class OverlayWindow(QWidget):
         self._title.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 11px; letter-spacing: 3px; font-weight: 500; background: transparent; border: none;")
 
         self._status = QLabel("● idle")
-        self._status.setStyleSheet("color: #555; font-size: 11px; background: transparent; border: none;")
+        self._status.setStyleSheet("color: #4a3a5e; font-size: 11px; background: transparent; border: none;")
 
         header.addWidget(self._title)
         header.addStretch()
@@ -68,7 +68,7 @@ class OverlayWindow(QWidget):
         # Response
         self._response = QLabel("")
         self._response.setWordWrap(True)
-        self._response.setStyleSheet("color: #1d9e75; font-size: 12px; background: transparent; border: none;")
+        self._response.setStyleSheet("color: #a855f7; font-size: 12px; background: transparent; border: none;")
         layout.addWidget(self._response)
 
         layout.addStretch()
@@ -79,7 +79,7 @@ class OverlayWindow(QWidget):
     @pyqtSlot()
     def set_listening(self):
         self._status.setText("● ouvindo")
-        self._status.setStyleSheet("color: #2a6ff5; font-size: 11px; background: transparent; border: none;")
+        self._status.setStyleSheet("color: #a855f7; font-size: 11px; background: transparent; border: none;")
         self._transcript.setText("...")
         self._response.setText("")
         self.show()
@@ -89,21 +89,34 @@ class OverlayWindow(QWidget):
     def set_processing(self):
         self._status.setText("● processando")
         self._status.setStyleSheet("color: #f59e0b; font-size: 11px; background: transparent; border: none;")
+        self._response.setText("")
+        self._response.setStyleSheet("color: #a855f7; font-size: 12px; background: transparent; border: none;")
+
+    @pyqtSlot(str)
+    def append_token(self, token: str):
+        self._response.setText(self._response.text() + token)
+        self._status.setText("● respondendo")
+        self._status.setStyleSheet("color: #a855f7; font-size: 11px; background: transparent; border: none;")
 
     @pyqtSlot(str)
     def set_transcript(self, text: str):
         self._transcript.setText(text)
 
-    @pyqtSlot(str)
-    def set_response(self, text: str):
+    @pyqtSlot(str, bool)
+    def set_response(self, text: str, is_action: bool = False):
         self._response.setText(text)
         self._status.setText("● respondendo")
-        self._status.setStyleSheet("color: #1d9e75; font-size: 11px; background: transparent; border: none;")
+        if is_action:
+            color = "#1d9e75"
+        else:
+            color = "#a855f7"
+        self._response.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent; border: none;")
+        self._status.setStyleSheet(f"color: {color}; font-size: 11px; background: transparent; border: none;")
 
     @pyqtSlot()
     def set_idle(self):
         self._status.setText("● idle")
-        self._status.setStyleSheet("color: #555; font-size: 11px; background: transparent; border: none;")
+        self._status.setStyleSheet("color: #4a3a5e; font-size: 11px; background: transparent; border: none;")
         self._idle_timer.start(4000)
 
     def _auto_hide(self):

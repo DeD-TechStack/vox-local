@@ -35,18 +35,18 @@ class Executor:
 
     def run(self, action: str, params: dict[str, Any]) -> str:
         if action not in self.allowed_actions:
-            return f"Ação '{action}' não permitida."
+            return f"Action '{action}' is not allowed."
 
         handler = self._action_map.get(action)
         if not handler:
-            return f"Ação '{action}' não implementada."
+            return f"Action '{action}' is not implemented."
 
         try:
             return handler(**params)
         except TypeError as e:
-            return f"Parâmetros inválidos para '{action}': {e}"
+            return f"Invalid parameters for '{action}': {e}"
         except Exception as e:
-            return f"Erro ao executar '{action}': {e}"
+            return f"Error running '{action}': {e}"
 
     # ─── Actions ────────────────────────────────────────────────────────────
 
@@ -54,14 +54,14 @@ class Executor:
         aliases = self.config.get("app_aliases", {})
         target = aliases.get(name.lower(), name)
         os.startfile(target) if os.name == "nt" else subprocess.Popen(["xdg-open", target])
-        return f"Abrindo {name}."
+        return f"Opening {name}."
 
     def _close_app(self, name: str) -> str:
         if os.name == "nt":
             subprocess.run(["taskkill", "/F", "/IM", f"{name}.exe"], capture_output=True)
         else:
             subprocess.run(["pkill", "-f", name], capture_output=True)
-        return f"Fechando {name}."
+        return f"Closing {name}."
 
     def _set_volume(self, level: int) -> str:
         level = max(0, min(100, int(level)))
@@ -73,13 +73,13 @@ class Executor:
             interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             volume = cast(interface, POINTER(IAudioEndpointVolume))
             volume.SetMasterVolumeLevelScalar(level / 100, None)
-        return f"Volume ajustado para {level}%."
+        return f"Volume set to {level}%."
 
     def _mute_volume(self) -> str:
         if os.name == "nt":
             import keyboard
             keyboard.send("volume mute")
-        return "Volume silenciado."
+        return "Muted."
 
     def _play_pause_media(self) -> str:
         import keyboard
@@ -89,12 +89,12 @@ class Executor:
     def _next_track(self) -> str:
         import keyboard
         keyboard.send("next track")
-        return "Próxima faixa."
+        return "Next track."
 
     def _prev_track(self) -> str:
         import keyboard
         keyboard.send("previous track")
-        return "Faixa anterior."
+        return "Previous track."
 
     def _search_file(self, query: str) -> str:
         search_dirs = self.config.get("search_dirs", [
@@ -109,37 +109,37 @@ class Executor:
             results.extend(found)
         if results:
             names = ", ".join(os.path.basename(r) for r in results[:3])
-            return f"Encontrei: {names}"
-        return f"Nenhum arquivo encontrado para '{query}'."
+            return f"Found: {names}"
+        return f"No files found for '{query}'."
 
     def _open_url(self, url: str) -> str:
         import webbrowser
         webbrowser.open(url)
-        return f"Abrindo {url}."
+        return f"Opening {url}."
 
     def _type_text(self, text: str) -> str:
         import pyautogui
         pyautogui.write(text, interval=0.05)
-        return f"Texto digitado."
+        return "Text typed."
 
     def _take_screenshot(self) -> str:
         import pyautogui
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = os.path.expanduser(f"~/Desktop/screenshot_{ts}.png")
         pyautogui.screenshot(path)
-        return f"Screenshot salvo em {path}."
+        return f"Screenshot saved to Desktop."
 
     def _show_time(self) -> str:
         now = datetime.now().strftime("%H:%M")
-        return f"São {now}."
+        return f"It's {now}."
 
     def _show_battery(self) -> str:
         try:
             import psutil
             battery = psutil.sensors_battery()
             if battery:
-                status = "carregando" if battery.power_plugged else "na bateria"
-                return f"Bateria em {int(battery.percent)}%, {status}."
+                status = "charging" if battery.power_plugged else "on battery"
+                return f"Battery at {int(battery.percent)}%, {status}."
         except Exception:
             pass
-        return "Não foi possível ler a bateria."
+        return "Could not read battery status."

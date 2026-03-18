@@ -8,9 +8,20 @@ hotkey: alt
 # Transcription language (en = English, pt = Portuguese)
 language: en
 
+# Microphone device index (null = system default)
+# Run the app once to see available devices printed in the terminal.
+# Example: mic_device: 1   ← Corsair headset
+#          mic_device: 3   ← USB PnP
+mic_device: null
+
 # Whisper model size: tiny / base / small / medium / large-v2
 # Larger = more accurate but slower. "base" is a great balance.
 whisper_model: base
+
+# Whisper device: cpu or cuda (use cuda only if you have an NVIDIA GPU with CUDA)
+# compute_type: int8 (cpu) or float16 (cuda)
+whisper_device: cpu
+whisper_compute_type: int8
 
 # Ollama settings
 ollama_url: http://localhost:11434

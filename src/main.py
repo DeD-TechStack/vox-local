@@ -1,64 +1,113 @@
 import sys
-import threading
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+import os
+import traceback
 
-from listener import Listener
-from brain import Brain
-from speaker import Speaker
-from executor import Executor
-from ui.overlay import OverlayWindow
 from utils.config import Config
 
 
-class VoxApp:
-    def __init__(self):
-        self.app = QApplication(sys.argv)
-        self.app.setQuitOnLastWindowClosed(False)
+def load_whisper(config: Config):
+    from faster_whisper import WhisperModel
+    device = config.get("whisper_device", "cpu")
+    compute_type = config.get("whisper_compute_type", "int8")
+    print(f"[VOX] Loading Whisper ({config.get('whisper_model', 'base')}, {device}/{compute_type})...")
+    model = WhisperModel(config.get("whisper_model", "base"), device=device, compute_type=compute_type)
+    print("[VOX] Whisper ready.")
+    return model
 
-        self.config = Config()
-        self.speaker = Speaker(self.config)
-        self.executor = Executor(self.config)
-        self.brain = Brain(self.config, self.executor)
-        self.listener = Listener(self.config)
 
-        self.overlay = OverlayWindow()
+def run_app(config: Config, whisper_model):
+    from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+    from PyQt6.QtGui import QIcon
+    from PyQt6.QtCore import QThread, pyqtSignal
 
-        self._connect_signals()
-        self._setup_tray()
+    from listener import Listener
+    from brain import Brain
+    from speaker import Speaker
+    from executor import Executor
+    from ui.overlay import OverlayWindow
 
-    def _connect_signals(self):
-        self.listener.transcription_ready.connect(self.on_transcription)
-        self.listener.listening_started.connect(self.overlay.set_listening)
-        self.listener.listening_stopped.connect(self.overlay.set_processing)
+    class BrainWorker(QThread):
+        response_ready = pyqtSignal(str, bool)
+        token_received = pyqtSignal(str)
 
-    def _setup_tray(self):
-        tray = QSystemTrayIcon(self.app)
-        tray.setToolTip("VOX")
+        def __init__(self, brain, text: str):
+            super().__init__()
+            self._brain = brain
+            self._text = text
 
-        menu = QMenu()
-        menu.addAction("Show", self.overlay.show)
-        menu.addAction("Settings", lambda: print("TODO: settings"))
-        menu.addSeparator()
-        menu.addAction("Quit", self.app.quit)
+        def run(self):
+            text, is_action = self._brain.process(self._text, on_token=self.token_received.emit)
+            self.response_ready.emit(text, is_action)
 
-        tray.setContextMenu(menu)
-        tray.show()
+    class VoxApp:
+        def __init__(self):
+            self.app = QApplication(sys.argv)
+            self.app.setQuitOnLastWindowClosed(False)
 
-    def on_transcription(self, text: str):
-        self.overlay.set_transcript(text)
-        response = self.brain.process(text)
-        self.overlay.set_response(response)
-        self.speaker.speak(response)
-        self.overlay.set_idle()
+            self.speaker = Speaker(config)
+            self.executor = Executor(config)
+            self.brain = Brain(config, self.executor)
+            self.listener = Listener(config, whisper_model)
 
-    def run(self):
-        self.overlay.show()
-        self.listener.start()
-        sys.exit(self.app.exec())
+            self.overlay = OverlayWindow()
+            self._brain_worker = None
+
+            self._connect_signals()
+            self._setup_tray()
+
+        def _connect_signals(self):
+            self.listener.transcription_ready.connect(self.on_transcription)
+            self.listener.listening_started.connect(self.overlay.set_listening)
+            self.listener.listening_stopped.connect(self.overlay.set_processing)
+
+        def _setup_tray(self):
+            icon_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "assets", "icon.ico",
+            )
+            icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+            tray = QSystemTrayIcon(icon, self.app)
+            tray.setToolTip("VOX")
+
+            menu = QMenu()
+            menu.addAction("Show", self.overlay.show)
+            menu.addAction("Settings", lambda: print("TODO: settings"))
+            menu.addSeparator()
+            menu.addAction("Quit", self.app.quit)
+
+            tray.setContextMenu(menu)
+            tray.show()
+
+        def on_transcription(self, text: str):
+            self.overlay.set_transcript(text)
+            self._brain_worker = BrainWorker(self.brain, text)
+            self._brain_worker.token_received.connect(self.overlay.append_token)
+            self._brain_worker.response_ready.connect(self.on_response)
+            self._brain_worker.start()
+
+        def on_response(self, response: str, is_action: bool):
+            self.overlay.set_response(response, is_action)
+            self.speaker.speak(response)
+            self.overlay.set_idle()
+
+        def run(self):
+            self.overlay.show()
+            self.listener.start()
+            sys.exit(self.app.exec())
+
+    vox = VoxApp()
+    vox.run()
 
 
 if __name__ == "__main__":
-    vox = VoxApp()
-    vox.run()
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vox_error.log")
+    try:
+        config = Config()
+        whisper_model = load_whisper(config)
+        run_app(config, whisper_model)
+    except Exception:
+        err = traceback.format_exc()
+        print(err)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(err)
+        print(f"[VOX] Erro salvo em: {os.path.abspath(log_path)}")
