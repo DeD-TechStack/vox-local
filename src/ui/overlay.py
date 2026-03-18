@@ -7,8 +7,8 @@ from PyQt6.QtGui import QColor, QPainter, QGuiApplication
 
 # ─── Stylesheet constants ──────────────────────────────────────────────────────
 
-_BG   = "background: transparent; border: none;"
-_MUTED = f"color: rgba(255,255,255,0.22); font-size: 11px; letter-spacing: 1px; {_BG}"
+_BG          = "background: transparent; border: none;"
+_MUTED_LABEL = f"color: #444444; font-size: 10px; letter-spacing: 1px; {_BG}"
 
 _CONTAINER_SS = """
 QFrame#container {
@@ -18,7 +18,7 @@ QFrame#container {
 }
 """
 
-W, H = 380, 200
+W, H = 380, 210
 
 
 # ─── Waveform ─────────────────────────────────────────────────────────────────
@@ -26,14 +26,15 @@ W, H = 380, 200
 class WaveformWidget(QWidget):
     BAR_COUNT = 8
     BAR_W     = 3
-    BAR_GAP   = 5
+    BAR_GAP   = 4
     BAR_MIN   = 4
     BAR_MAX   = 24
+    CONTAINER_H = 28  # fixed container height
 
     def __init__(self, parent=None):
         super().__init__(parent)
         total_w = self.BAR_COUNT * self.BAR_W + (self.BAR_COUNT - 1) * self.BAR_GAP
-        self.setFixedSize(total_w, self.BAR_MAX + 6)
+        self.setFixedSize(total_w, self.CONTAINER_H)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._bars   = [float(self.BAR_MIN)] * self.BAR_COUNT
         self._active = False
@@ -62,6 +63,7 @@ class WaveformWidget(QWidget):
         cy = self.height() / 2
         n  = self.BAR_COUNT
         for i, h in enumerate(self._bars):
+            h = min(h, self.BAR_MAX)
             x = i * (self.BAR_W + self.BAR_GAP)
             y = cy - h / 2
             edge  = 1.0 - abs(i - (n - 1) / 2) / ((n - 1) / 2)
@@ -76,10 +78,10 @@ class WaveformWidget(QWidget):
 class OverlayWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self._state        = "idle"
-        self._pulse_on     = True
-        self._pulse_color  = "#444"
-        self._pulse_dim    = "#444"
+        self._state       = "idle"
+        self._pulse_on    = True
+        self._pulse_color = "#444444"
+        self._pulse_dim   = "rgba(68,68,68,0.2)"
 
         self._setup_window()
         self._setup_ui()
@@ -113,26 +115,24 @@ class OverlayWindow(QWidget):
         self._container.setStyleSheet(_CONTAINER_SS)
 
         root = QVBoxLayout(self._container)
-        root.setContentsMargins(18, 14, 18, 12)
+        root.setContentsMargins(18, 14, 18, 14)
         root.setSpacing(0)
 
-        # ── Header row ──────────────────────────────────────
+        # ── Header row ───────────────────────────────────────
         header = QHBoxLayout()
         header.setSpacing(0)
 
         self._title = QLabel("VOX")
         self._title.setStyleSheet(
             f"color: rgba(255,255,255,0.9); font-size: 11px; "
-            f"letter-spacing: 3px; font-weight: 600; {_BG}"
+            f"letter-spacing: 3px; font-weight: 500; {_BG}"
         )
 
         self._dot = QLabel("●")
-        self._dot.setStyleSheet(f"color: #444; font-size: 9px; {_BG}")
+        self._dot.setStyleSheet(f"color: #444444; font-size: 8px; {_BG}")
 
         self._status_lbl = QLabel("idle")
-        self._status_lbl.setStyleSheet(
-            f"color: #444; font-size: 11px; {_BG}"
-        )
+        self._status_lbl.setStyleSheet(f"color: #444444; font-size: 11px; {_BG}")
 
         status_row = QHBoxLayout()
         status_row.setSpacing(5)
@@ -146,7 +146,7 @@ class OverlayWindow(QWidget):
 
         root.addSpacing(8)
 
-        # ── Divider ─────────────────────────────────────────
+        # ── Divider ──────────────────────────────────────────
         div = QFrame()
         div.setFrameShape(QFrame.Shape.HLine)
         div.setFixedHeight(1)
@@ -155,7 +155,7 @@ class OverlayWindow(QWidget):
 
         root.addSpacing(8)
 
-        # ── Waveform ────────────────────────────────────────
+        # ── Waveform (centered, 28px container) ──────────────
         wave_row = QHBoxLayout()
         wave_row.setSpacing(0)
         self._waveform = WaveformWidget()
@@ -167,9 +167,9 @@ class OverlayWindow(QWidget):
         root.addSpacing(10)
 
         # ── Transcript section ───────────────────────────────
-        self._lbl_transcript = QLabel("transcript")
-        self._lbl_transcript.setStyleSheet(_MUTED)
-        root.addWidget(self._lbl_transcript)
+        self._lbl_you = QLabel("YOU")
+        self._lbl_you.setStyleSheet(_MUTED_LABEL)
+        root.addWidget(self._lbl_you)
 
         root.addSpacing(2)
 
@@ -183,10 +183,10 @@ class OverlayWindow(QWidget):
 
         root.addSpacing(6)
 
-        # ── Response section ────────────────────────────────
-        self._lbl_response = QLabel("response")
-        self._lbl_response.setStyleSheet(_MUTED)
-        root.addWidget(self._lbl_response)
+        # ── Response section ─────────────────────────────────
+        self._lbl_vox = QLabel("VOX")
+        self._lbl_vox.setStyleSheet(_MUTED_LABEL)
+        root.addWidget(self._lbl_vox)
 
         root.addSpacing(2)
 
@@ -198,10 +198,10 @@ class OverlayWindow(QWidget):
 
         root.addStretch()
 
-        # ── Footer ──────────────────────────────────────────
-        self._footer = QLabel("Hold ALT to speak")
+        # ── Footer ───────────────────────────────────────────
+        self._footer = QLabel("Say VOX to activate")
         self._footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._footer.setStyleSheet(f"color: #333333; font-size: 11px; {_BG}")
+        self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
         root.addWidget(self._footer)
 
     # ── Dot & pulse ───────────────────────────────────────────────────────────
@@ -226,9 +226,17 @@ class OverlayWindow(QWidget):
         self._apply_dot(self._pulse_color if self._pulse_on else self._pulse_dim)
 
     def _apply_dot(self, color: str):
-        self._dot.setStyleSheet(f"color: {color}; font-size: 9px; {_BG}")
+        self._dot.setStyleSheet(f"color: {color}; font-size: 8px; {_BG}")
 
     # ── State slots ───────────────────────────────────────────────────────────
+
+    @pyqtSlot()
+    def set_idle(self):
+        self._state = "idle"
+        self._set_status("idle", "#444444")
+        self._waveform.set_active(False)
+        self._footer.setVisible(True)
+        self._idle_timer.start(5000)
 
     @pyqtSlot()
     def set_listening(self):
@@ -241,6 +249,7 @@ class OverlayWindow(QWidget):
         self._response.setText("")
         self._response.setStyleSheet(f"color: #A855F7; font-size: 13px; {_BG}")
         self._waveform.set_active(True)
+        self._footer.setVisible(False)
         self._idle_timer.stop()
         self.show()
 
@@ -251,6 +260,7 @@ class OverlayWindow(QWidget):
         self._waveform.set_active(False)
         self._response.setText("")
         self._response.setStyleSheet(f"color: #A855F7; font-size: 13px; {_BG}")
+        self._footer.setVisible(False)
 
     @pyqtSlot()
     def set_generating(self):
@@ -269,22 +279,26 @@ class OverlayWindow(QWidget):
         if self._state != "responding":
             self._state = "responding"
             self._set_status("responding", "#A855F7")
+            self._footer.setVisible(False)
         self._response.setText(self._response.text() + token)
 
-    @pyqtSlot(str, bool)
-    def set_response(self, text: str, is_action: bool = False):
+    @pyqtSlot(str)
+    def set_response(self, text: str):
+        """Show response text in purple (conversational reply)."""
         self._state = "responding"
-        color = "#1D9E75" if is_action else "#A855F7"
         self._response.setText(text)
-        self._response.setStyleSheet(f"color: {color}; font-size: 13px; {_BG}")
-        self._set_status("responding", color)
+        self._response.setStyleSheet(f"color: #A855F7; font-size: 13px; {_BG}")
+        self._set_status("responding", "#A855F7")
+        self._footer.setVisible(False)
 
-    @pyqtSlot()
-    def set_idle(self):
-        self._state = "idle"
-        self._set_status("idle", "#444444")
-        self._waveform.set_active(False)
-        self._idle_timer.start(5000)
+    @pyqtSlot(str)
+    def set_action(self, text: str):
+        """Show response text in green (confirmed action)."""
+        self._state = "responding"
+        self._response.setText(text)
+        self._response.setStyleSheet(f"color: #1D9E75; font-size: 13px; {_BG}")
+        self._set_status("done", "#1D9E75")
+        self._footer.setVisible(False)
 
     def _auto_hide(self):
         self._transcript.setText("–")
@@ -311,7 +325,7 @@ class OverlayWindow(QWidget):
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _darken(hex_color: str) -> str:
-    """Return a 25%-opacity version of a hex color for the pulse dim state."""
+    """Return a 20%-opacity rgba version of a hex color (used for pulse dim state)."""
     h = hex_color.lstrip("#")
     if len(h) == 6:
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)

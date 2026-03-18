@@ -10,9 +10,9 @@ log = get_logger("VOX")
 
 def load_whisper(config: Config):
     from faster_whisper import WhisperModel
-    device = config.get("whisper_device", "cpu")
+    device       = config.get("whisper_device",       "cpu")
     compute_type = config.get("whisper_compute_type", "int8")
-    log.info(f"Loading Whisper ({config.get('whisper_model', 'base')}, {device}/{compute_type})...")
+    log.info(f"Loading Whisper ({config.get('whisper_model', 'base')}, {device}/{compute_type})…")
     model = WhisperModel(config.get("whisper_model", "base"), device=device, compute_type=compute_type)
     log.info("Whisper ready.")
     return model
@@ -24,20 +24,20 @@ def run_app(config: Config, whisper_model):
     from PyQt6.QtCore import QThread, pyqtSignal
 
     from listener import Listener
-    from brain import Brain
-    from speaker import Speaker
+    from brain    import Brain
+    from speaker  import Speaker
     from executor import Executor
     from ui.overlay import OverlayWindow
 
     class BrainWorker(QThread):
-        response_ready   = pyqtSignal(str, bool)
-        token_received   = pyqtSignal(str)
-        generating_started = pyqtSignal()   # fired when first token arrives
+        response_ready     = pyqtSignal(str, bool)
+        token_received     = pyqtSignal(str)
+        generating_started = pyqtSignal()
 
         def __init__(self, brain, text: str):
             super().__init__()
             self._brain = brain
-            self._text = text
+            self._text  = text
 
         def run(self):
             try:
@@ -47,7 +47,6 @@ def run_app(config: Config, whisper_model):
                     on_generating=self.generating_started.emit,
                 )
             except Exception as e:
-                import traceback
                 traceback.print_exc()
                 text, is_action = f"Internal error: {e}", False
             self.response_ready.emit(text, is_action)
@@ -57,21 +56,21 @@ def run_app(config: Config, whisper_model):
             self.app = QApplication(sys.argv)
             self.app.setQuitOnLastWindowClosed(False)
 
-            self.speaker = Speaker(config)
+            self.speaker  = Speaker(config)
             self.executor = Executor(config)
-            self.brain = Brain(config, self.executor)
+            self.brain    = Brain(config, self.executor)
             self.listener = Listener(config, whisper_model)
 
-            self.overlay = OverlayWindow()
+            self.overlay       = OverlayWindow()
             self._brain_worker = None
 
             self._connect_signals()
             self._setup_tray()
 
         def _connect_signals(self):
-            self.listener.transcription_ready.connect(self.on_transcription)
             self.listener.listening_started.connect(self.overlay.set_listening)
             self.listener.listening_stopped.connect(self.overlay.set_processing)
+            self.listener.transcription_ready.connect(self.on_transcription)
 
         def _setup_tray(self):
             icon_path = os.path.join(
@@ -83,10 +82,10 @@ def run_app(config: Config, whisper_model):
             tray.setToolTip("VOX")
 
             menu = QMenu()
-            menu.addAction("Show", self.overlay.show)
+            menu.addAction("Show",           self.overlay.show)
             menu.addAction("Audio Settings", self._open_audio_settings)
             menu.addSeparator()
-            menu.addAction("Quit", self.app.quit)
+            menu.addAction("Quit",           self.app.quit)
 
             tray.setContextMenu(menu)
             tray.show()
@@ -96,7 +95,6 @@ def run_app(config: Config, whisper_model):
             dlg = AudioSettingsDialog(config)
             if dlg.exec():
                 self.speaker.reload_config()
-                # mic_device is read per-press in listener, no reload needed
 
         def on_transcription(self, text: str):
             self.overlay.set_transcript(text)
@@ -107,7 +105,10 @@ def run_app(config: Config, whisper_model):
             self._brain_worker.start()
 
         def on_response(self, response: str, is_action: bool):
-            self.overlay.set_response(response, is_action)
+            if is_action:
+                self.overlay.set_action(response)
+            else:
+                self.overlay.set_response(response)
             self.speaker.speak(response)
             self.overlay.set_idle()
 
@@ -123,7 +124,7 @@ def run_app(config: Config, whisper_model):
 if __name__ == "__main__":
     log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vox_error.log")
     try:
-        config = Config()
+        config        = Config()
         whisper_model = load_whisper(config)
         run_app(config, whisper_model)
     except Exception:

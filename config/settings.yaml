@@ -13,18 +13,18 @@ allowed_actions:
 - show_time
 - show_battery
 app_aliases:
-  discord: 'discord://'
-  spotify: 'spotify:'
-  steam: 'steam://open/main'
-  chrome: chrome
-  firefox: firefox
-  vscode: code
-  vs code: code
-  notepad: notepad
   calculator: calc
+  chrome: chrome
+  discord: discord://
   explorer: explorer
+  firefox: firefox
+  notepad: notepad
   paint: mspaint
-hotkey: alt
+  spotify: 'spotify:'
+  steam: steam://open/main
+  vs code: code
+  vscode: code
+chunk_duration: 2.0
 language: en
 mic_device: 3
 ollama_model: qwen2.5:3b
@@ -35,10 +35,11 @@ search_dirs:
 - ~/Documents
 - ~/Downloads
 - ~/Desktop
+silence_duration: 1.5
+silence_threshold: 0.01
 tts_enabled: true
 voice_model: voices/en_US-ryan-high.onnx
-wake_word: hey vox
-wake_word_enabled: false
+wake_word: vox
 whisper_compute_type: int8
 whisper_device: cpu
 whisper_model: base

@@ -9,9 +9,12 @@ sounddevice>=0.4.6
 numpy>=1.24.0
 
 # Input / Control
+# keyboard is used ONLY in executor.py for media key simulation (mute, play/pause, next/prev track)
+# It is NOT used for hotkey activation — VOX uses always-on wake word detection instead
 keyboard>=0.13.5
 pyautogui>=0.9.54
-pycaw>=20230407          # Windows volume control
+pycaw>=20230407          # Windows volume control via WASAPI
+comtypes>=1.2.0          # Required by pycaw (Windows COM interface)
 
 # System info
 psutil>=5.9.0

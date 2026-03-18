@@ -4,39 +4,51 @@ from typing import Any
 
 
 DEFAULT_CONFIG = {
-    "hotkey": "alt",
-    "language": "en",
-    "whisper_model": "base",
-    "whisper_device": "cpu",
+    # ── Wake word ────────────────────────────────────────────────────────────
+    "wake_word":         "vox",
+    "chunk_duration":    2.0,    # seconds per wake-word detection chunk
+    "silence_threshold": 0.01,   # RMS threshold below which audio is considered silent
+    "silence_duration":  1.5,    # seconds of silence that ends a command
+
+    # ── STT ──────────────────────────────────────────────────────────────────
+    "language":            "en",
+    "whisper_model":       "base",
+    "whisper_device":      "cpu",
     "whisper_compute_type": "int8",
-    "ollama_url": "http://localhost:11434",
+
+    # ── LLM ──────────────────────────────────────────────────────────────────
+    "ollama_url":   "http://localhost:11434",
     "ollama_model": "qwen2.5:14b",
-    "tts_enabled": True,
-    "piper_path": "piper/piper/piper.exe",
-    "voice_model": "voices/en_US-ryan-high.onnx",
-    "wake_word_enabled": False,
-    "wake_word": "hey vox",
-    "mic_device": None,
+
+    # ── TTS ──────────────────────────────────────────────────────────────────
+    "tts_enabled":  True,
+    "piper_path":   "piper/piper/piper.exe",
+    "voice_model":  "voices/en_US-ryan-high.onnx",
+
+    # ── Audio devices ────────────────────────────────────────────────────────
+    "mic_device":    None,
     "output_device": None,
+
+    # ── Executor ─────────────────────────────────────────────────────────────
     "search_dirs": [
         "~/Documents",
         "~/Downloads",
         "~/Desktop",
     ],
     "app_aliases": {
-        # URI schemes — launch the installed app directly via Windows registry
+        # URI schemes — launch the installed app via Windows registry
         "discord": "discord://",
         "spotify": "spotify:",
         # Executables in PATH or App Paths registry
-        "chrome": "chrome",
-        "firefox": "firefox",
-        "vscode": "code",
-        "vs code": "code",
-        "notepad": "notepad",
-        "calculator": "calc",
-        "explorer": "explorer",
-        "paint": "mspaint",
-        "steam": "steam://open/main",
+        "chrome":      "chrome",
+        "firefox":     "firefox",
+        "vscode":      "code",
+        "vs code":     "code",
+        "notepad":     "notepad",
+        "calculator":  "calc",
+        "explorer":    "explorer",
+        "paint":       "mspaint",
+        "steam":       "steam://open/main",
     },
     "allowed_actions": [
         "open_app",
@@ -73,7 +85,7 @@ class Config:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 yaml.dump(DEFAULT_CONFIG, f, allow_unicode=True, default_flow_style=False)
-            # Use print here because logger may not be initialized yet at config load time
+            # Use print here — logger may not be initialised yet at config load time
             print(f"[Config] Created default config at {path}")
 
     def get(self, key: str, default: Any = None) -> Any:
