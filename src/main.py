@@ -27,8 +27,9 @@ def run_app(config: Config, whisper_model):
     from ui.overlay import OverlayWindow
 
     class BrainWorker(QThread):
-        response_ready = pyqtSignal(str, bool)
-        token_received = pyqtSignal(str)
+        response_ready   = pyqtSignal(str, bool)
+        token_received   = pyqtSignal(str)
+        generating_started = pyqtSignal()   # fired when first token arrives
 
         def __init__(self, brain, text: str):
             super().__init__()
@@ -36,7 +37,16 @@ def run_app(config: Config, whisper_model):
             self._text = text
 
         def run(self):
-            text, is_action = self._brain.process(self._text, on_token=self.token_received.emit)
+            try:
+                text, is_action = self._brain.process(
+                    self._text,
+                    on_token=self.token_received.emit,
+                    on_generating=self.generating_started.emit,
+                )
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                text, is_action = f"Internal error: {e}", False
             self.response_ready.emit(text, is_action)
 
     class VoxApp:
@@ -71,17 +81,25 @@ def run_app(config: Config, whisper_model):
 
             menu = QMenu()
             menu.addAction("Show", self.overlay.show)
-            menu.addAction("Settings", lambda: print("TODO: settings"))
+            menu.addAction("Audio Settings", self._open_audio_settings)
             menu.addSeparator()
             menu.addAction("Quit", self.app.quit)
 
             tray.setContextMenu(menu)
             tray.show()
 
+        def _open_audio_settings(self):
+            from ui.audio_settings import AudioSettingsDialog
+            dlg = AudioSettingsDialog(config)
+            if dlg.exec():
+                self.speaker.reload_config()
+                # mic_device is read per-press in listener, no reload needed
+
         def on_transcription(self, text: str):
             self.overlay.set_transcript(text)
             self._brain_worker = BrainWorker(self.brain, text)
             self._brain_worker.token_received.connect(self.overlay.append_token)
+            self._brain_worker.generating_started.connect(self.overlay.set_generating)
             self._brain_worker.response_ready.connect(self.on_response)
             self._brain_worker.start()
 

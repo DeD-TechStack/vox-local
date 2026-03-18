@@ -53,7 +53,15 @@ class Executor:
     def _open_app(self, name: str) -> str:
         aliases = self.config.get("app_aliases", {})
         target = aliases.get(name.lower(), name)
-        os.startfile(target) if os.name == "nt" else subprocess.Popen(["xdg-open", target])
+        if os.name == "nt":
+            # URI scheme (discord://, spotify:, etc.) — let Windows registry handle it
+            if "://" in target or (target.endswith(":") and len(target) > 2):
+                os.startfile(target)
+            else:
+                # Use Windows `start` which searches PATH + App Paths registry
+                subprocess.Popen(f'start "" "{target}"', shell=True)
+        else:
+            subprocess.Popen(["xdg-open", target])
         return f"Opening {name}."
 
     def _close_app(self, name: str) -> str:

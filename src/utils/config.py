@@ -5,28 +5,36 @@ from typing import Any
 
 DEFAULT_CONFIG = {
     "hotkey": "alt",
-    "language": "pt",
+    "language": "en",
     "whisper_model": "base",
+    "whisper_device": "cpu",
+    "whisper_compute_type": "int8",
     "ollama_url": "http://localhost:11434",
     "ollama_model": "qwen2.5:14b",
     "tts_enabled": True,
     "piper_path": "piper",
-    "voice_model": "pt_BR-faber-medium",
+    "voice_model": "en_US-ryan-high.onnx",
+    "mic_device": None,
+    "output_device": None,
     "search_dirs": [
         "~/Documents",
         "~/Downloads",
         "~/Desktop",
     ],
     "app_aliases": {
-        "spotify": "spotify",
+        # URI schemes — launch the installed app directly via Windows registry
+        "discord": "discord://",
+        "spotify": "spotify:",
+        # Executables in PATH or App Paths registry
         "chrome": "chrome",
         "firefox": "firefox",
-        "discord": "discord",
         "vscode": "code",
         "vs code": "code",
-        "bloco de notas": "notepad",
-        "calculadora": "calc",
-        "explorador": "explorer",
+        "notepad": "notepad",
+        "calculator": "calc",
+        "explorer": "explorer",
+        "paint": "mspaint",
+        "steam": "steam://open/main",
     },
     "allowed_actions": [
         "open_app",
@@ -52,6 +60,7 @@ class Config:
             base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             path = os.path.join(base, "config", "settings.yaml")
 
+        self._path = path
         self._data = dict(DEFAULT_CONFIG)
 
         if os.path.exists(path):
@@ -69,3 +78,14 @@ class Config:
 
     def set(self, key: str, value: Any):
         self._data[key] = value
+
+    def save(self):
+        """Persist current in-memory values back to the YAML file."""
+        if os.path.exists(self._path):
+            with open(self._path, "r", encoding="utf-8") as f:
+                on_disk = yaml.safe_load(f) or {}
+        else:
+            on_disk = {}
+        on_disk.update(self._data)
+        with open(self._path, "w", encoding="utf-8") as f:
+            yaml.dump(on_disk, f, allow_unicode=True, default_flow_style=False)
