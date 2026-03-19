@@ -1,6 +1,7 @@
 import sys
 import os
 import traceback
+import requests as _requests
 
 from utils.config import Config
 from utils.logger import get_logger
@@ -21,7 +22,7 @@ def load_whisper(config: Config):
 def run_app(config: Config, whisper_model):
     from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
     from PyQt6.QtGui import QIcon
-    from PyQt6.QtCore import QThread, pyqtSignal
+    from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 
     from listener import Listener
     from brain    import Brain
@@ -71,6 +72,13 @@ def run_app(config: Config, whisper_model):
             self.listener.listening_started.connect(self.overlay.set_listening)
             self.listener.listening_stopped.connect(self.overlay.set_processing)
             self.listener.transcription_ready.connect(self.on_transcription)
+            self.listener.language_detected.connect(self.overlay.show_detected_language)
+            self.overlay.language_clicked.connect(self.on_language_cycle)
+
+            self._ollama_timer = QTimer()
+            self._ollama_timer.timeout.connect(self._ping_ollama)
+            self._ollama_timer.start(12000)
+            self._ping_ollama()  # check immediately on startup
 
         def _setup_tray(self):
             icon_path = os.path.join(
@@ -97,12 +105,35 @@ def run_app(config: Config, whisper_model):
                 self.speaker.reload_config()
 
         def on_transcription(self, text: str):
+            # Ignore new command if still processing the previous one
+            if self._brain_worker and self._brain_worker.isRunning():
+                log.warning("Brain still processing — ignoring new transcription.")
+                return
             self.overlay.set_transcript(text)
             self._brain_worker = BrainWorker(self.brain, text)
             self._brain_worker.token_received.connect(self.overlay.append_token)
             self._brain_worker.generating_started.connect(self.overlay.set_generating)
             self._brain_worker.response_ready.connect(self.on_response)
             self._brain_worker.start()
+
+        def _ping_ollama(self):
+            try:
+                r = _requests.get(
+                    f"{config.get('ollama_url', 'http://localhost:11434')}/api/tags",
+                    timeout=2,
+                )
+                self.overlay.set_ollama_ok(r.status_code == 200)
+            except Exception:
+                self.overlay.set_ollama_ok(False)
+
+        def on_language_cycle(self):
+            order   = ["auto", "pt", "en"]
+            current = config.get("language", "auto")
+            nxt     = order[(order.index(current) + 1) % len(order)] if current in order else "auto"
+            config.set("language", nxt)
+            config.save()
+            self.overlay.set_language_mode(nxt)
+            log.info(f"Language switched to: {nxt}")
 
         def on_response(self, response: str, is_action: bool):
             if is_action:
