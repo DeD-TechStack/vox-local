@@ -13,6 +13,7 @@ log = get_logger("Listener")
 
 class Listener(QThread):
     transcription_ready = pyqtSignal(str)
+    language_detected   = pyqtSignal(str)
     listening_started   = pyqtSignal()
     listening_stopped   = pyqtSignal()
 
@@ -56,9 +57,11 @@ class Listener(QThread):
                 sd.wait()
 
                 audio    = chunk.flatten()
+                lang_cfg  = self.config.get("language", "auto")
+                lang_param = None if lang_cfg == "auto" else lang_cfg
                 segments, _ = self.model.transcribe(
                     audio,
-                    language=self.config.get("language", "en"),
+                    language=lang_param,
                     beam_size=1,
                 )
                 text = " ".join(s.text.strip() for s in segments).strip().lower()
@@ -76,9 +79,11 @@ class Listener(QThread):
 
     def _record_until_silence(self, mic_device, silence_samples: int):
         """Record audio until silence_samples consecutive silent samples. Returns flat ndarray."""
-        all_chunks        = []
+        all_chunks         = []
         consecutive_silent = 0
-        chunk_size        = self.SAMPLE_RATE // 2  # 0.5 s read chunks
+        chunk_size         = self.SAMPLE_RATE // 2  # 0.5 s read chunks
+        max_samples        = int(self.SAMPLE_RATE * float(self.config.get("max_record_duration", 30)))
+        total_samples      = 0
 
         stream = sd.InputStream(
             samplerate=self.SAMPLE_RATE,
@@ -91,6 +96,7 @@ class Listener(QThread):
             while True:
                 data, _ = stream.read(chunk_size)
                 all_chunks.append(data.copy())
+                total_samples += chunk_size
                 rms = float(np.sqrt(np.mean(data ** 2)))
                 if rms < self._silence_threshold:
                     consecutive_silent += chunk_size
@@ -98,6 +104,9 @@ class Listener(QThread):
                         break
                 else:
                     consecutive_silent = 0
+                if total_samples >= max_samples:
+                    log.warning("Max recording duration reached — stopping capture.")
+                    break
         finally:
             stream.stop()
             stream.close()
@@ -107,11 +116,15 @@ class Listener(QThread):
         return None
 
     def _transcribe_and_emit(self, audio: np.ndarray):
-        segments, _ = self.model.transcribe(
+        lang_cfg   = self.config.get("language", "auto")
+        lang_param = None if lang_cfg == "auto" else lang_cfg
+        segments, info = self.model.transcribe(
             audio,
-            language=self.config.get("language", "en"),
+            language=lang_param,
             beam_size=5,
         )
+        detected = getattr(info, "language", lang_cfg) or "auto"
+        self.language_detected.emit(detected)
         text = " ".join(s.text.strip() for s in segments).strip()
 
         # Strip leading wake word in case the mic picked it up in the command phase
