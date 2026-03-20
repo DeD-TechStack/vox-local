@@ -1,3 +1,4 @@
+activation_mode: wake_word
 allowed_actions:
 - open_app
 - close_app
@@ -26,12 +27,14 @@ app_aliases:
   vscode: code
 chunk_duration: 2.0
 language: auto
+max_history: 20
 max_record_duration: 30
-mic_device: null
+mic_device: 3
 ollama_model: qwen2.5:7b
 ollama_url: http://localhost:11434
-output_device: null
+output_device: 29
 piper_path: piper/piper/piper.exe
+push_to_talk_key: ctrl+shift
 search_dirs:
 - ~/Documents
 - ~/Downloads
@@ -39,12 +42,8 @@ search_dirs:
 silence_duration: 1.5
 silence_threshold: 0.01
 tts_enabled: true
-# Para PT-BR baixe: https://huggingface.co/rhasspy/piper-voices/tree/main/pt/pt_BR/faber/medium
 voice_model: voices/pt_BR-faber-medium.onnx
 wake_word: vox
-activation_mode: wake_word
-push_to_talk_key: ctrl+shift
-max_history: 20
 whisper_compute_type: int8
 whisper_device: cpu
 whisper_model: base
