@@ -78,9 +78,13 @@ class Config:
         self._data = dict(DEFAULT_CONFIG)
 
         if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                loaded = yaml.safe_load(f) or {}
-                self._data.update(loaded)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    loaded = yaml.safe_load(f) or {}
+                    self._data.update(loaded)
+            except yaml.YAMLError as e:
+                print(f"[Config] YAML parse error in {path}: {e}")
+                print("[Config] Using default settings.")
         else:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
@@ -97,8 +101,11 @@ class Config:
     def save(self):
         """Persist current in-memory values back to the YAML file."""
         if os.path.exists(self._path):
-            with open(self._path, "r", encoding="utf-8") as f:
-                on_disk = yaml.safe_load(f) or {}
+            try:
+                with open(self._path, "r", encoding="utf-8") as f:
+                    on_disk = yaml.safe_load(f) or {}
+            except yaml.YAMLError:
+                on_disk = {}
         else:
             on_disk = {}
         on_disk.update(self._data)

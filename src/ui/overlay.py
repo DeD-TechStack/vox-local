@@ -375,6 +375,7 @@ class OverlayWindow(QWidget):
             f"color: rgba(255,255,255,0.2); font-size: 13px; {_BG}"
         )
         self._response.setText("")
+        self.hide()
 
     # ── Drag ─────────────────────────────────────────────────────────────────
 

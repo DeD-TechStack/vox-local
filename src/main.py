@@ -74,6 +74,7 @@ def run_app(config: Config, whisper_model):
             self.listener.transcription_ready.connect(self.on_transcription)
             self.listener.language_detected.connect(self.overlay.show_detected_language)
             self.overlay.language_clicked.connect(self.on_language_cycle)
+            self.overlay.set_language_mode(config.get("language", "auto"))
 
             self._ollama_timer = QTimer()
             self._ollama_timer.timeout.connect(self._ping_ollama)
