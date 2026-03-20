@@ -101,10 +101,11 @@ class OverlayWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self._state       = "idle"
-        self._pulse_on    = True
-        self._pulse_color = "#444444"
-        self._pulse_dim   = "rgba(68,68,68,0.2)"
+        self._state          = "idle"
+        self._pulse_on       = True
+        self._pulse_color    = "#444444"
+        self._pulse_dim      = "rgba(68,68,68,0.2)"
+        self._footer_default = "Diga VOX para ativar"
 
         self._setup_window()
         self._setup_ui()
@@ -242,7 +243,7 @@ class OverlayWindow(QWidget):
         footer_row.setContentsMargins(0, 0, 0, 0)
         footer_row.setSpacing(0)
 
-        self._footer = QLabel("Diga VOX para ativar")
+        self._footer = QLabel(self._footer_default)
         self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
 
         self._lang_badge = ClickableLabel("AUTO")
@@ -282,11 +283,41 @@ class OverlayWindow(QWidget):
 
     # ── State slots ───────────────────────────────────────────────────────────
 
+    @pyqtSlot(str)
+    def set_footer_mode(self, mode: str):
+        """Update footer hint text based on activation mode."""
+        if mode == "push_to_talk":
+            key = "Ctrl+Shift"  # shown as default; caller may pass actual key
+            self._footer_default = f"Pressione {key} para ativar"
+        else:
+            self._footer_default = "Diga VOX para ativar"
+        self._footer.setText(self._footer_default)
+
+    @pyqtSlot(str)
+    def set_footer_mode_with_key(self, mode: str, key: str):
+        """Update footer hint text with a specific push-to-talk key label."""
+        if mode == "push_to_talk":
+            self._footer_default = f"Pressione {key.upper()} para ativar"
+        else:
+            self._footer_default = "Diga VOX para ativar"
+        self._footer.setText(self._footer_default)
+
+    @pyqtSlot()
+    def set_cancelled(self):
+        """Briefly show 'cancelado' then return to idle."""
+        self._state = "idle"
+        self._set_status("cancelado", "#EF4444")
+        self._waveform.set_active(False)
+        self._response.setText("")
+        self._footer.setVisible(False)
+        self._idle_timer.start(1500)
+
     @pyqtSlot()
     def set_idle(self):
         self._state = "idle"
         self._set_status("inativo", "#444444")
         self._waveform.set_active(False)
+        self._footer.setText(self._footer_default)
         self._footer.setVisible(True)
         self._idle_timer.start(5000)
 

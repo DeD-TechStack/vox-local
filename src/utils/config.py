@@ -4,6 +4,10 @@ from typing import Any
 
 
 DEFAULT_CONFIG = {
+    # ── Activation ───────────────────────────────────────────────────────────
+    "activation_mode":   "wake_word",   # "wake_word" | "push_to_talk"
+    "push_to_talk_key":  "ctrl+shift",  # key combo used in push_to_talk mode
+
     # ── Wake word ────────────────────────────────────────────────────────────
     "wake_word":         "vox",
     "chunk_duration":    2.0,    # seconds per wake-word detection chunk
@@ -17,8 +21,9 @@ DEFAULT_CONFIG = {
     "whisper_compute_type": "int8",
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    "ollama_url":   "http://localhost:11434",
-    "ollama_model": "qwen2.5:14b",
+    "ollama_url":    "http://localhost:11434",
+    "ollama_model":  "qwen2.5:14b",
+    "max_history":   20,
 
     # ── TTS ──────────────────────────────────────────────────────────────────
     "tts_enabled":  True,

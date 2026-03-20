@@ -23,13 +23,13 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 
 ## Features
 
-- **Voice activation** — hold `Alt` to speak, release to send
+- **Wake word activation** — say "VOX" to activate; no hotkey required
+- **Push-to-talk mode** — optional `Ctrl+Shift` press-to-talk (configurable)
 - **Local LLM** — runs on Ollama (qwen2.5, llama3, mistral, etc.)
 - **Local TTS** — Piper voices, zero latency
 - **Permission system** — the AI can only run actions you explicitly allow in `settings.yaml`
 - **Floating HUD** — minimal overlay, always on top, draggable
-- **Fully configurable** — model, hotkey, language, aliases, allowed actions
-- **Wake word mode** — optional always-on mode, no external library needed
+- **Fully configurable** — model, activation mode, language, aliases, allowed actions
 
 ---
 
@@ -94,11 +94,13 @@ python main.py
 
 | Action | How |
 |--------|-----|
-| Speak a command | Hold `Alt`, speak, release |
-| Change hotkey | Edit `config/settings.yaml` → `hotkey` |
+| Activate (wake word mode) | Say "VOX" — the overlay turns blue and listens |
+| Activate (push-to-talk mode) | Press and hold `Ctrl+Shift`, speak, release |
+| Switch activation mode | Edit `activation_mode` in `config/settings.yaml` |
 | Add an app alias | Edit `app_aliases` in settings |
 | Block an action | Remove it from `allowed_actions` in settings |
 | Move the overlay | Click and drag |
+| Open Settings | Right-click the system tray icon |
 
 ### Example commands
 
@@ -154,16 +156,28 @@ Overlay HUD — shows transcript + response
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `hotkey` | `alt` | Key to hold while speaking |
-| `language` | `en` | Transcription language |
+| `activation_mode` | `wake_word` | How VOX is triggered: `wake_word` or `push_to_talk` |
+| `wake_word` | `vox` | Phrase that activates wake-word mode |
+| `push_to_talk_key` | `ctrl+shift` | Key combo for push-to-talk mode |
+| `language` | `auto` | Transcription language (`auto`, `pt`, `en`) |
 | `whisper_model` | `base` | Whisper model size |
+| `whisper_device` | `cpu` | Device for Whisper (`cpu` or `cuda`) |
+| `whisper_compute_type` | `int8` | Compute type for Whisper |
 | `ollama_model` | `qwen2.5:14b` | Ollama model to use |
+| `ollama_url` | `http://localhost:11434` | Ollama API base URL |
 | `tts_enabled` | `true` | Enable/disable voice responses |
+| `piper_path` | `piper/piper/piper.exe` | Path to Piper binary (relative to project root) |
 | `voice_model` | `voices/en_US-ryan-high.onnx` | Piper voice (.onnx path, relative to project root) |
-| `wake_word_enabled` | `false` | Enable always-on wake word mode |
-| `wake_word` | `hey vox` | Phrase to trigger wake word mode |
+| `mic_device` | `null` | Microphone device index (null = system default) |
+| `output_device` | `null` | Speaker device index (null = system default) |
+| `max_history` | `20` | Max conversation turns kept in memory |
+| `chunk_duration` | `2.0` | Seconds per wake-word detection chunk |
+| `silence_threshold` | `0.01` | RMS below which audio is considered silent |
+| `silence_duration` | `1.5` | Seconds of silence that ends a command |
+| `max_record_duration` | `30` | Max seconds to record a single command |
 | `app_aliases` | see file | Map spoken names to executables |
-| `allowed_actions` | see file | Whitelist of executable actions |
+| `allowed_actions` | see file | Allowlist of executable actions |
+| `search_dirs` | Documents, Downloads, Desktop | Directories searched by `search_file` |
 
 ---
 
@@ -205,9 +219,11 @@ Check that `piper_path` in `config/settings.yaml` points to the correct binary. 
 ## Roadmap
 
 - [x] Wake word support (always-on)
-- [ ] Settings GUI
+- [x] Push-to-talk activation mode
+- [x] Settings GUI
+- [x] Cancel/interrupt running request
 - [ ] Custom action plugins
-- [ ] Conversation memory / context
+- [ ] Conversation memory persistence
 - [ ] Linux audio (PipeWire) improvements
 
 ---
