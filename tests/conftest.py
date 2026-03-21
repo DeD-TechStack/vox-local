@@ -36,10 +36,43 @@ sd_stub.play = MagicMock()
 sd_stub.InputStream = MagicMock()
 sys.modules.setdefault("sounddevice", sd_stub)
 
-# PyQt6 — stub out the entire namespace
-for _qt_mod in (
-    "PyQt6", "PyQt6.QtWidgets", "PyQt6.QtCore", "PyQt6.QtGui",
-):
+# PyQt6 — stub out the entire namespace with minimal working attributes.
+# QThread, pyqtSignal, and pyqtSlot must behave well enough for modules that
+# define listener/overlay classes to be imported without a real Qt installation.
+_QThread_stub = type("QThread", (), {
+    "__init__": lambda self, *a, **kw: None,
+    "start": lambda self: None,
+    "wait": lambda self, *a: True,
+    "isRunning": lambda self: False,
+    "quit": lambda self: None,
+})
+
+def _pyqtSignal(*args, **kwargs):
+    """Stub factory that returns a descriptor-like object compatible with connect()."""
+    class _Sig:
+        def connect(self, *a, **kw): pass
+        def emit(self, *a, **kw): pass
+        def disconnect(self, *a, **kw): pass
+    return _Sig()
+
+def _pyqtSlot(*args, **kwargs):
+    """Stub decorator that passes the decorated function through unchanged."""
+    def _decorator(fn):
+        return fn
+    return _decorator
+
+_qt_core_stub = _stub(
+    "PyQt6.QtCore",
+    QThread=_QThread_stub,
+    pyqtSignal=_pyqtSignal,
+    pyqtSlot=_pyqtSlot,
+    QTimer=MagicMock(),
+    Qt=MagicMock(),
+    QRectF=MagicMock(),
+)
+sys.modules.setdefault("PyQt6.QtCore", _qt_core_stub)
+
+for _qt_mod in ("PyQt6", "PyQt6.QtWidgets", "PyQt6.QtGui"):
     sys.modules.setdefault(_qt_mod, _stub(_qt_mod))
 
 # keyboard

@@ -133,11 +133,15 @@ def run_app(config: Config, whisper_model):
             self._setup_tray()
             self._apply_activation_mode_ui()
 
-        def _connect_signals(self):
+        def _connect_listener_signals(self):
+            """Connect (or reconnect) listener-specific signals to overlay slots."""
             self.listener.listening_started.connect(self.overlay.set_listening)
             self.listener.listening_stopped.connect(self.overlay.set_processing)
             self.listener.transcription_ready.connect(self.on_transcription)
             self.listener.language_detected.connect(self.overlay.show_detected_language)
+
+        def _connect_signals(self):
+            self._connect_listener_signals()
             self.overlay.language_clicked.connect(self.on_language_cycle)
             self.overlay.set_language_mode(config.get("language", "auto"))
 
@@ -172,9 +176,17 @@ def run_app(config: Config, whisper_model):
 
         def _open_audio_settings(self):
             from ui.audio_settings import AudioSettingsDialog
+            old_mic = config.get("mic_device", None)
             dlg = AudioSettingsDialog(config)
             if dlg.exec():
                 self.speaker.reload_config()
+                new_mic = config.get("mic_device", None)
+                if new_mic != old_mic:
+                    log.info("Mic device changed — restarting listener.")
+                    self.overlay.show_info_notice(
+                        "Microphone changed — restarting listener…"
+                    )
+                    self._restart_listener()
 
         def _open_settings(self):
             from ui.settings_dialog import SettingsDialog
@@ -182,13 +194,31 @@ def run_app(config: Config, whisper_model):
             if dlg.exec():
                 self.speaker.reload_config()
                 self._apply_activation_mode_ui()
+                self.overlay.set_language_mode(config.get("language", "auto"))
+                # Activation mode and wake word are read dynamically by the
+                # listener loop on the next iteration — no restart needed.
+                # Voice model and TTS changes take effect immediately.
+
+        def _restart_listener(self):
+            """Stop and restart the listener thread.
+
+            The listener stop flag is set; the thread checks it between audio
+            calls and exits within at most chunk_duration seconds (≤ 2 s).
+            Calling start() again on the same QThread object is safe once the
+            thread has finished running.
+            """
+            self.listener.stop_listener()
+            if not self.listener.wait(3000):
+                log.warning("Listener did not stop cleanly within 3 s — proceeding anyway.")
+            self.listener.start()
+            log.info("Listener restarted.")
 
         def on_transcription(self, text: str):
-            # If Brain is still processing, cancel it and start fresh
+            # If Brain is still processing, cancel it and start fresh.
             if self._brain_worker and self._brain_worker.isRunning():
                 log.info("New transcription received — cancelling running worker.")
                 self._brain_worker.cancel()
-                self._brain_worker.wait(2000)  # give it up to 2 s to stop
+                self._brain_worker.wait(2000)
                 self.overlay.set_cancelled()
 
             self.overlay.set_transcript(text)

@@ -23,7 +23,7 @@ class Speaker:
         self.enabled = self.config.get("tts_enabled", True)
         self.output_device = self.config.get("output_device", None)
 
-        # Resolve relative paths against the project root (parent of config/)
+        # Resolve relative paths against the project root (parent of config/).
         project_root = os.path.dirname(os.path.dirname(self.config._path))
 
         def _resolve(raw: str) -> str:
@@ -31,7 +31,7 @@ class Speaker:
                 return raw
             return os.path.normpath(os.path.join(project_root, raw))
 
-        self.piper_path = _resolve(self.config.get("piper_path", "piper"))
+        self.piper_path  = _resolve(self.config.get("piper_path",  "piper"))
         self.voice_model = _resolve(self.config.get("voice_model", "en_US-ryan-high.onnx"))
 
     def reload_config(self):
@@ -57,11 +57,24 @@ class Speaker:
                     timeout=15,
                 )
 
-                if proc.returncode == 0 and os.path.exists(wav_path):
-                    self._play_wav(wav_path)
+                if proc.returncode != 0:
+                    stderr_msg = proc.stderr.decode("utf-8", errors="replace").strip()
+                    if stderr_msg:
+                        log.error(f"Piper error (exit {proc.returncode}): {stderr_msg}")
+                    else:
+                        log.error(f"Piper exited with code {proc.returncode} and no stderr output.")
+                    return
+
+                if not os.path.exists(wav_path):
+                    log.error("Piper exited successfully but produced no output file.")
+                    return
+
+                self._play_wav(wav_path)
 
             except FileNotFoundError:
                 log.error("Piper not found. Check piper_path in settings.yaml")
+            except subprocess.TimeoutExpired:
+                log.error("Piper timed out after 15 s.")
             except Exception as e:
                 log.error(f"TTS error: {e}")
             finally:
@@ -71,9 +84,9 @@ class Speaker:
     def _play_wav(self, path: str):
         with wave.open(path, "rb") as wf:
             n_channels = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            framerate = wf.getframerate()
-            raw = wf.readframes(wf.getnframes())
+            sampwidth  = wf.getsampwidth()
+            framerate  = wf.getframerate()
+            raw        = wf.readframes(wf.getnframes())
 
         dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
         dtype = dtype_map.get(sampwidth, np.int16)
@@ -83,8 +96,10 @@ class Speaker:
 
         audio = audio.astype(np.float32) / np.iinfo(dtype).max
 
-        # Resample to device native rate if needed (WASAPI requires exact match)
+        # target_rate tracks the actual sample rate of the audio array so that
+        # both primary playback and the fallback path use the correct rate.
         target_rate = framerate
+
         if self.output_device is not None:
             try:
                 dev_rate = int(sd.query_devices(self.output_device)["default_samplerate"])
@@ -104,5 +119,8 @@ class Speaker:
             sd.wait()
         except Exception as e:
             log.warning(f"Output device failed ({e}), falling back to default")
-            sd.play(audio, samplerate=framerate, device=None)
+            # Use target_rate (the actual sample rate of the audio array) rather
+            # than the original framerate — if the audio was already resampled,
+            # playing it at framerate would produce wrong-pitch audio.
+            sd.play(audio, samplerate=target_rate, device=None)
             sd.wait()

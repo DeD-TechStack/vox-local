@@ -5,6 +5,7 @@ Tests for src/executor.py.
 No hardware, GUI, or audio dependencies are imported.
 """
 
+import glob as _glob
 import os
 import sys
 import yaml
@@ -192,3 +193,146 @@ class TestCloseApp:
              patch("os.name", "nt"):
             result = ex._close_app("notepad")
         assert "notepad" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# search_file — path normalisation
+# ---------------------------------------------------------------------------
+
+class TestSearchFileNormalization:
+    def test_tilde_not_in_glob_pattern(self, tmp_path):
+        """search_dirs containing ~ must be expanded before globbing.
+
+        Verify that glob.glob is never called with a literal ~ in the path —
+        unexpanded ~ would cause glob to silently find nothing on most systems.
+        """
+        cfg = _make_config(tmp_path)
+        ex = Executor(cfg)
+
+        captured_patterns = []
+
+        def capture_glob(pattern, recursive=False):
+            captured_patterns.append(pattern)
+            return []
+
+        with patch("glob.glob", side_effect=capture_glob):
+            ex._search_file("myfile")
+
+        for pat in captured_patterns:
+            assert "~" not in pat, (
+                f"Glob pattern contains unexpanded ~: {pat!r}"
+            )
+
+    def test_finds_file_in_configured_dir(self, tmp_path):
+        """search_file locates a real file inside a configured search_dirs entry."""
+        # Create a test file to be found.
+        target = tmp_path / "my_report_2024.pdf"
+        target.write_text("dummy")
+
+        cfg = _make_config(tmp_path, {"search_dirs": [str(tmp_path)]})
+        ex = Executor(cfg)
+
+        result = ex._search_file("my_report_2024")
+        assert "my_report_2024" in result
+
+    def test_tilde_dir_is_expanded(self, tmp_path):
+        """A search_dir value of '~' alone expands to the home directory."""
+        cfg = _make_config(tmp_path, {"search_dirs": ["~"]})
+        ex = Executor(cfg)
+
+        home = os.path.expanduser("~")
+        captured_patterns = []
+
+        def capture_glob(pattern, recursive=False):
+            captured_patterns.append(pattern)
+            return []
+
+        with patch("glob.glob", side_effect=capture_glob):
+            ex._search_file("anything")
+
+        assert any(home in p for p in captured_patterns), (
+            f"Home dir '{home}' not found in glob patterns: {captured_patterns}"
+        )
+
+    def test_returns_not_found_message_when_empty(self, tmp_path):
+        cfg = _make_config(tmp_path, {"search_dirs": [str(tmp_path)]})
+        ex = Executor(cfg)
+        result = ex._search_file("zzz_nonexistent_file_xyz")
+        assert "Nenhum arquivo" in result or "nenhum" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# close_app — alias-aware process name derivation
+# ---------------------------------------------------------------------------
+
+class TestCloseAppAlias:
+    def test_uri_scheme_alias_derives_process_name(self, tmp_path):
+        """close_app("discord") with alias "discord://" must kill "discord.exe",
+        not "discord://.exe"."""
+        cfg = _make_config(tmp_path, {
+            "app_aliases": {"discord": "discord://"},
+        })
+        ex = Executor(cfg)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run, \
+             patch("os.name", "nt"):
+            ex._close_app("discord")
+
+        args = mock_run.call_args[0][0]
+        # The process name argument must be "discord.exe", not "discord://.exe".
+        assert "discord.exe" in args, f"Expected 'discord.exe' in args, got: {args}"
+        assert "://" not in " ".join(str(a) for a in args), (
+            "URI scheme leaked into taskkill arguments"
+        )
+
+    def test_colon_suffix_alias_derives_process_name(self, tmp_path):
+        """close_app("spotify") with alias "spotify:" must kill "spotify.exe"."""
+        cfg = _make_config(tmp_path, {
+            "app_aliases": {"spotify": "spotify:"},
+        })
+        ex = Executor(cfg)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run, \
+             patch("os.name", "nt"):
+            ex._close_app("spotify")
+
+        args = mock_run.call_args[0][0]
+        assert "spotify.exe" in args, f"Expected 'spotify.exe' in args, got: {args}"
+
+    def test_plain_alias_uses_alias_as_process(self, tmp_path):
+        """close_app("vscode") with alias "code" must kill "code.exe"."""
+        cfg = _make_config(tmp_path, {
+            "app_aliases": {"vscode": "code"},
+        })
+        ex = Executor(cfg)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run, \
+             patch("os.name", "nt"):
+            ex._close_app("vscode")
+
+        args = mock_run.call_args[0][0]
+        assert "code.exe" in args, f"Expected 'code.exe' in args, got: {args}"
+
+    def test_no_alias_uses_name_directly(self, tmp_path):
+        """close_app with no alias entry uses the raw name as process."""
+        cfg = _make_config(tmp_path, {"app_aliases": {}})
+        ex = Executor(cfg)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run, \
+             patch("os.name", "nt"):
+            ex._close_app("notepad")
+
+        args = mock_run.call_args[0][0]
+        assert "notepad.exe" in args

@@ -29,10 +29,10 @@ chunk_duration: 2.0
 language: auto
 max_history: 20
 max_record_duration: 30
-mic_device: 3
+mic_device:
 ollama_model: qwen2.5:7b
 ollama_url: http://localhost:11434
-output_device: 29
+output_device:
 piper_path: piper/piper/piper.exe
 push_to_talk_key: ctrl+shift
 search_dirs:
