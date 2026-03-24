@@ -116,6 +116,18 @@ def run_app(config: Config, whisper_model):
             self._brain_worker.response_ready.connect(self.on_response)
             self._brain_worker.start()
 
+            # Watchdog: if brain hangs for >35s, reset to idle
+            self._brain_timeout = QTimer()
+            self._brain_timeout.setSingleShot(True)
+            self._brain_timeout.timeout.connect(self._on_brain_timeout)
+            self._brain_timeout.start(35000)
+
+        def _on_brain_timeout(self):
+            if self._brain_worker and self._brain_worker.isRunning():
+                log.error("Brain worker timed out — resetting to idle.")
+                self._brain_worker.terminate()
+                self.overlay.set_idle()
+
         def _ping_ollama(self):
             try:
                 r = _requests.get(
@@ -136,6 +148,8 @@ def run_app(config: Config, whisper_model):
             log.info(f"Language switched to: {nxt}")
 
         def on_response(self, response: str, is_action: bool):
+            if hasattr(self, "_brain_timeout"):
+                self._brain_timeout.stop()
             if is_action:
                 self.overlay.set_action(response)
             else:

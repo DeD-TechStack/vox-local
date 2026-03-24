@@ -105,8 +105,8 @@ class Brain:
             "stream": True,
             "options": {
                 "temperature": 0.2,
-                "num_predict": 256,
-                "num_ctx": 2048,
+                "num_predict": 100,
+                "num_ctx": 1024,
             },
         }
 
@@ -114,7 +114,7 @@ class Brain:
             resp = requests.post(
                 f"{self.base_url}/api/chat",
                 json=payload,
-                timeout=60,
+                timeout=30,
                 stream=True,
             )
             resp.raise_for_status()
