@@ -18,7 +18,6 @@ class Listener(QThread):
     listening_stopped   = pyqtSignal()
 
     SAMPLE_RATE = 16000
-    CHANNELS    = 1
 
     def __init__(self, config: Config, model: WhisperModel):
         super().__init__()
@@ -34,13 +33,34 @@ class Listener(QThread):
 
     def run(self):
         self._print_devices()
+        self._validate_mic_device()
         log.info(f"Wake word mode active. Say '{self._wake_word}' to activate.")
         self._run_wake_word_loop()
 
+    def _validate_mic_device(self):
+        mic_device = self.config.get("mic_device", None)
+        try:
+            info = sd.query_devices(mic_device, "input") if mic_device is not None else sd.query_devices(sd.default.device[0])
+            if info["max_input_channels"] == 0:
+                log.error(f"mic_device {mic_device} ({info['name']}) has NO input channels — it is an output device! Fix mic_device in settings.yaml.")
+            else:
+                log.info(f"Using mic: [{mic_device}] {info['name']} ({info['max_input_channels']}ch)")
+        except Exception as e:
+            log.warning(f"Could not validate mic_device {mic_device}: {e}")
+
     # ── Wake word loop ────────────────────────────────────────────────────────
+
+    def _get_device_channels(self, mic_device) -> int:
+        """Return the number of input channels supported by the device (min 1)."""
+        try:
+            info = sd.query_devices(mic_device, "input") if mic_device is not None else sd.query_devices(sd.default.device[0])
+            return max(1, int(info["max_input_channels"]))
+        except Exception:
+            return 1
 
     def _run_wake_word_loop(self):
         mic_device      = self.config.get("mic_device", None)
+        channels        = self._get_device_channels(mic_device)
         chunk_samples   = int(self.SAMPLE_RATE * self._chunk_duration)
         silence_samples = int(self.SAMPLE_RATE * self._silence_duration)
 
@@ -50,13 +70,15 @@ class Listener(QThread):
                 chunk = sd.rec(
                     chunk_samples,
                     samplerate=self.SAMPLE_RATE,
-                    channels=self.CHANNELS,
+                    channels=channels,
                     dtype="float32",
                     device=mic_device,
                 )
                 sd.wait()
 
-                audio    = chunk.flatten()
+                audio    = chunk.mean(axis=1) if chunk.ndim > 1 and chunk.shape[1] > 1 else chunk.flatten()
+                rms = float(np.sqrt(np.mean(audio ** 2)))
+                log.debug(f"[wake] chunk rms={rms:.4f}")
                 lang_cfg  = self.config.get("language", "auto")
                 lang_param = None if lang_cfg == "auto" else lang_cfg
                 segments, _ = self.model.transcribe(
@@ -65,6 +87,8 @@ class Listener(QThread):
                     beam_size=1,
                 )
                 text = " ".join(s.text.strip() for s in segments).strip().lower()
+                if text:
+                    log.info(f"[wake] heard: '{text}'")
 
                 if self._wake_word in text:
                     log.info(f"Wake word detected — listening for command…")
@@ -74,6 +98,10 @@ class Listener(QThread):
                     if command_audio is not None:
                         self._transcribe_and_emit(command_audio)
 
+            except sd.PortAudioError as e:
+                log.error(f"Audio device error: {e} — retrying with default device")
+                mic_device = None
+                channels   = self._get_device_channels(mic_device)
             except Exception as e:
                 log.error(f"Wake word loop error: {e}")
 
@@ -83,11 +111,13 @@ class Listener(QThread):
         consecutive_silent = 0
         chunk_size         = self.SAMPLE_RATE // 2  # 0.5 s read chunks
         max_samples        = int(self.SAMPLE_RATE * float(self.config.get("max_record_duration", 30)))
+        min_samples        = int(self.SAMPLE_RATE * float(self.config.get("min_listen_duration", 1.0)))
         total_samples      = 0
+        channels           = self._get_device_channels(mic_device)
 
         stream = sd.InputStream(
             samplerate=self.SAMPLE_RATE,
-            channels=self.CHANNELS,
+            channels=channels,
             dtype="float32",
             device=mic_device,
         )
@@ -98,7 +128,7 @@ class Listener(QThread):
                 all_chunks.append(data.copy())
                 total_samples += chunk_size
                 rms = float(np.sqrt(np.mean(data ** 2)))
-                if rms < self._silence_threshold:
+                if total_samples >= min_samples and rms < self._silence_threshold:
                     consecutive_silent += chunk_size
                     if consecutive_silent >= silence_samples:
                         break
@@ -112,7 +142,8 @@ class Listener(QThread):
             stream.close()
 
         if all_chunks:
-            return np.concatenate(all_chunks, axis=0).flatten()
+            audio = np.concatenate(all_chunks, axis=0)
+            return audio.mean(axis=1) if audio.ndim > 1 and audio.shape[1] > 1 else audio.flatten()
         return None
 
     def _transcribe_and_emit(self, audio: np.ndarray):
