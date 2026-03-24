@@ -5,6 +5,9 @@ from typing import Callable
 
 from executor import Executor
 from utils.config import Config
+from utils.logger import get_logger
+
+log = get_logger("Brain")
 
 
 # Compact prompt — fewer tokens = faster TTFT
@@ -47,11 +50,23 @@ REGRAS CRÍTICAS:
 - Para conversa/perguntas: responda no idioma do usuário, máximo 2 frases.
 """
 
+# Matches a JSON object containing "action" key (handles fenced blocks too)
 _JSON_RE = re.compile(r'\{[^{}]*"action"\s*:[^{}]*\}', re.DOTALL)
+_FENCE_RE = re.compile(r'```(?:json)?\s*(\{.*?\})\s*```', re.DOTALL)
 
 
 def _extract_action(text: str) -> dict | None:
+    """
+    Try four strategies to extract a JSON action from model output:
+    1. Entire response is a bare JSON object.
+    2. Fenced code block: ```json { ... } ```.
+    3. Regex scan for {"action": ...} anywhere in the text.
+    4. Substring from first '{' to last '}'.
+    Returns a dict with at least "action" key, or None.
+    """
     stripped = text.strip()
+
+    # Strategy 1: response is pure JSON
     if stripped.startswith("{"):
         try:
             data = json.loads(stripped)
@@ -60,6 +75,16 @@ def _extract_action(text: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
+    # Strategy 2: fenced code block
+    for fence_match in _FENCE_RE.finditer(text):
+        try:
+            data = json.loads(fence_match.group(1))
+            if "action" in data:
+                return data
+        except json.JSONDecodeError:
+            continue
+
+    # Strategy 3: regex scan
     for match in _JSON_RE.finditer(text):
         try:
             data = json.loads(match.group())
@@ -68,6 +93,7 @@ def _extract_action(text: str) -> dict | None:
         except json.JSONDecodeError:
             continue
 
+    # Strategy 4: substring heuristic
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end > start:
         try:
@@ -93,8 +119,11 @@ class Brain:
         user_input: str,
         on_token: Callable[[str], None] | None = None,
         on_generating: Callable[[], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> tuple[str, bool]:
         self.history.append({"role": "user", "content": user_input})
+
+        max_history = int(self.config.get("max_history", 20))
 
         payload = {
             "model": self.model,
@@ -123,6 +152,10 @@ class Brain:
             is_action_stream = None
 
             for raw_line in resp.iter_lines():
+                if cancelled and cancelled():
+                    log.info("Brain stream cancelled.")
+                    break
+
                 if not raw_line:
                     continue
                 try:
@@ -152,15 +185,27 @@ class Brain:
         except Exception as e:
             return f"Error: {e}", False
 
+        if cancelled and cancelled():
+            # Do not store partial output in history
+            self.history.pop()
+            return "", False
+
         content = full_content.strip()
-        self.history.append({"role": "assistant", "content": content})
-        if len(self.history) > 20:
-            self.history = self.history[-20:]
+
+        # Store a clean summary in history — avoid raw JSON blobs in memory
+        history_content = content
+        action_data = _extract_action(content)
+        if action_data:
+            history_content = f"[action: {action_data.get('action', '?')}]"
+
+        self.history.append({"role": "assistant", "content": history_content})
+        if len(self.history) > max_history:
+            self.history = self.history[-max_history:]
 
         return self._handle_response(content)
 
     def _handle_response(self, content: str) -> tuple[str, bool]:
         data = _extract_action(content)
         if data:
-            return self.executor.run(data.get("action", ""), data.get("params", {})), True
+            return self.executor.run(data.get("action", ""), data.get("params") or {}), True
         return content, False

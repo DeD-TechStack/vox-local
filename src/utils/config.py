@@ -4,6 +4,10 @@ from typing import Any
 
 
 DEFAULT_CONFIG = {
+    # ── Activation ───────────────────────────────────────────────────────────
+    "activation_mode":   "wake_word",   # "wake_word" | "push_to_talk"
+    "push_to_talk_key":  "ctrl+shift",  # key combo used in push_to_talk mode
+
     # ── Wake word ────────────────────────────────────────────────────────────
     "wake_word":         "vox",
     "chunk_duration":    2.0,    # seconds per wake-word detection chunk
@@ -17,8 +21,9 @@ DEFAULT_CONFIG = {
     "whisper_compute_type": "int8",
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    "ollama_url":   "http://localhost:11434",
-    "ollama_model": "qwen2.5:14b",
+    "ollama_url":    "http://localhost:11434",
+    "ollama_model":  "qwen2.5:14b",
+    "max_history":   20,
 
     # ── TTS ──────────────────────────────────────────────────────────────────
     "tts_enabled":  True,
@@ -78,9 +83,13 @@ class Config:
         self._data = dict(DEFAULT_CONFIG)
 
         if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                loaded = yaml.safe_load(f) or {}
-                self._data.update(loaded)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    loaded = yaml.safe_load(f) or {}
+                    self._data.update(loaded)
+            except yaml.YAMLError as e:
+                print(f"[Config] YAML parse error in {path}: {e}")
+                print("[Config] Using default settings.")
         else:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
@@ -97,8 +106,11 @@ class Config:
     def save(self):
         """Persist current in-memory values back to the YAML file."""
         if os.path.exists(self._path):
-            with open(self._path, "r", encoding="utf-8") as f:
-                on_disk = yaml.safe_load(f) or {}
+            try:
+                with open(self._path, "r", encoding="utf-8") as f:
+                    on_disk = yaml.safe_load(f) or {}
+            except yaml.YAMLError:
+                on_disk = {}
         else:
             on_disk = {}
         on_disk.update(self._data)

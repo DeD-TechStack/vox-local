@@ -1,3 +1,4 @@
+activation_mode: wake_word
 allowed_actions:
 - open_app
 - close_app
@@ -25,6 +26,7 @@ app_aliases:
   vs code: code
   vscode: code
 chunk_duration: 2.0
+<<<<<<< HEAD
 language: pt
 max_record_duration: 30
 mic_device: 9
@@ -32,7 +34,17 @@ min_listen_duration: 1.0
 ollama_model: qwen2.5:3b
 ollama_url: http://localhost:11434
 output_device: 12
+=======
+language: auto
+max_history: 20
+max_record_duration: 30
+mic_device:
+ollama_model: qwen2.5:7b
+ollama_url: http://localhost:11434
+output_device:
+>>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
 piper_path: piper/piper/piper.exe
+push_to_talk_key: ctrl+shift
 search_dirs:
 - ~/Documents
 - ~/Downloads

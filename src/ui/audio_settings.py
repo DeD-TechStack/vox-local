@@ -171,7 +171,9 @@ class AudioSettingsDialog(QDialog):
         root.addSpacing(18)
 
         # Input device
-        root.addWidget(QLabel("Input Device  (microphone)", styleSheet=_SS_LABEL))
+        lbl_in = QLabel("Input Device  (microphone)")
+        lbl_in.setStyleSheet(_SS_LABEL)
+        root.addWidget(lbl_in)
         root.addSpacing(6)
         self._input_combo = QComboBox()
         self._input_combo.setStyleSheet(_SS_COMBO)
@@ -180,7 +182,9 @@ class AudioSettingsDialog(QDialog):
         root.addSpacing(16)
 
         # Output device
-        root.addWidget(QLabel("Output Device  (speakers / headphones)", styleSheet=_SS_LABEL))
+        lbl_out = QLabel("Output Device  (speakers / headphones)")
+        lbl_out.setStyleSheet(_SS_LABEL)
+        root.addWidget(lbl_out)
         root.addSpacing(6)
         self._output_combo = QComboBox()
         self._output_combo.setStyleSheet(_SS_COMBO)

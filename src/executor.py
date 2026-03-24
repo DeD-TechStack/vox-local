@@ -5,6 +5,9 @@ from datetime import datetime
 from typing import Any
 
 from utils.config import Config
+from utils.logger import get_logger
+
+log = get_logger("Executor")
 
 
 class Executor:
@@ -41,6 +44,9 @@ class Executor:
         if not handler:
             return f"Ação '{action}' não está implementada."
 
+        if params is None:
+            params = {}
+
         try:
             return handler(**params)
         except TypeError as e:
@@ -54,25 +60,58 @@ class Executor:
         aliases = self.config.get("app_aliases", {})
         target = aliases.get(name.lower(), name)
         if os.name == "nt":
-            # URI scheme (discord://, spotify:, etc.) — let Windows registry handle it
+            # URI scheme (discord://, spotify:, etc.) — let Windows registry handle it.
             if "://" in target or (target.endswith(":") and len(target) > 2):
                 os.startfile(target)
             else:
-                # Use Windows `start` which searches PATH + App Paths registry
+                # Use Windows `start` which searches PATH + App Paths registry.
                 subprocess.Popen(f'start "" "{target}"', shell=True)
         else:
-            subprocess.Popen(["xdg-open", target])
+            # On Linux, xdg-open works for URI schemes (discord://, etc.).
+            # For plain executable names, prefer direct launch via subprocess.
+            if "://" in target or (target.endswith(":") and len(target) > 2):
+                subprocess.Popen(["xdg-open", target])
+            else:
+                subprocess.Popen([target])
         return f"Abrindo {name}."
 
     def _close_app(self, name: str) -> str:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/IM", f"{name}.exe"], capture_output=True)
+        aliases = self.config.get("app_aliases", {})
+        alias   = aliases.get(name.lower(), name)
+
+        # Derive the process name from the alias.
+        # URI-scheme aliases ("discord://", "spotify:", "steam://open/main")
+        # map to their base name as the process executable.
+        if "://" in alias:
+            proc_name = alias.split("://")[0]
+        elif alias.endswith(":") and len(alias) > 1:
+            proc_name = alias[:-1]
         else:
-            subprocess.run(["pkill", "-f", name], capture_output=True)
+            proc_name = alias
+
+        if os.name == "nt":
+            result = subprocess.run(
+                ["taskkill", "/F", "/IM", f"{proc_name}.exe"],
+                capture_output=True,
+            )
+            # taskkill exits 128 when the process is not found.
+            if result.returncode == 128:
+                return f"Nenhum processo '{name}' encontrado."
+            if result.returncode != 0:
+                return f"Não foi possível fechar '{name}'."
+        else:
+            result = subprocess.run(["pkill", "-f", proc_name], capture_output=True)
+            if result.returncode != 0:
+                return f"Nenhum processo '{name}' encontrado."
         return f"Fechando {name}."
 
-    def _set_volume(self, level: int) -> str:
-        level = max(0, min(100, int(level)))
+    def _set_volume(self, level) -> str:
+        # Accept level as int or string (LLM may produce either).
+        try:
+            level = int(level)
+        except (TypeError, ValueError):
+            return "Nível de volume inválido. Informe um número entre 0 e 100."
+        level = max(0, min(100, level))
         if os.name == "nt":
             from ctypes import cast, POINTER
             from comtypes import CLSCTX_ALL
@@ -81,36 +120,110 @@ class Executor:
             interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             volume = cast(interface, POINTER(IAudioEndpointVolume))
             volume.SetMasterVolumeLevelScalar(level / 100, None)
+        else:
+            # Try pactl first (PulseAudio / PipeWire), fall back to amixer.
+            pactl = subprocess.run(
+                ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{level}%"],
+                capture_output=True,
+            )
+            if pactl.returncode != 0:
+                amixer = subprocess.run(
+                    ["amixer", "-q", "sset", "Master", f"{level}%"],
+                    capture_output=True,
+                )
+                if amixer.returncode != 0:
+                    log.warning("set_volume: neither pactl nor amixer succeeded on Linux.")
+                    return "Não foi possível ajustar o volume no Linux."
         return f"Volume em {level}%."
 
     def _mute_volume(self) -> str:
         if os.name == "nt":
             import keyboard
             keyboard.send("volume mute")
-        return "Mudo ativado."
+        else:
+            # Try pactl first, then keyboard module as fallback.
+            pactl = subprocess.run(
+                ["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"],
+                capture_output=True,
+            )
+            if pactl.returncode != 0:
+                try:
+                    import keyboard
+                    keyboard.send("volume mute")
+                except Exception:
+                    log.warning("mute_volume: neither pactl nor keyboard succeeded on Linux.")
+                    return "Não foi possível silenciar no Linux."
+        return "Mudo alternado."
 
     def _play_pause_media(self) -> str:
+        if os.name != "nt":
+            # keyboard.send() for media keys requires root on Linux and may fail silently.
+            # playerctl is the recommended approach on Linux desktops.
+            result = subprocess.run(["playerctl", "play-pause"], capture_output=True)
+            if result.returncode != 0:
+                # Fall back to keyboard module; may require elevated permissions.
+                try:
+                    import keyboard
+                    keyboard.send("play/pause media")
+                    return "Play/pause."
+                except Exception as e:
+                    log.warning(f"play_pause_media: keyboard fallback failed on Linux: {e}")
+                    return (
+                        "Controle de mídia não disponível. "
+                        "Instale playerctl ou execute como administrador no Linux."
+                    )
+            return "Play/pause."
         import keyboard
         keyboard.send("play/pause media")
         return "Play/pause."
 
-
     def _next_track(self) -> str:
+        if os.name != "nt":
+            result = subprocess.run(["playerctl", "next"], capture_output=True)
+            if result.returncode != 0:
+                try:
+                    import keyboard
+                    keyboard.send("next track")
+                    return "Próxima faixa."
+                except Exception as e:
+                    log.warning(f"next_track: keyboard fallback failed on Linux: {e}")
+                    return (
+                        "Controle de mídia não disponível. "
+                        "Instale playerctl ou execute como administrador no Linux."
+                    )
+            return "Próxima faixa."
         import keyboard
         keyboard.send("next track")
         return "Próxima faixa."
 
     def _prev_track(self) -> str:
+        if os.name != "nt":
+            result = subprocess.run(["playerctl", "previous"], capture_output=True)
+            if result.returncode != 0:
+                try:
+                    import keyboard
+                    keyboard.send("previous track")
+                    return "Faixa anterior."
+                except Exception as e:
+                    log.warning(f"prev_track: keyboard fallback failed on Linux: {e}")
+                    return (
+                        "Controle de mídia não disponível. "
+                        "Instale playerctl ou execute como administrador no Linux."
+                    )
+            return "Faixa anterior."
         import keyboard
         keyboard.send("previous track")
         return "Faixa anterior."
 
     def _search_file(self, query: str) -> str:
-        search_dirs = self.config.get("search_dirs", [
-            os.path.expanduser("~/Documents"),
-            os.path.expanduser("~/Downloads"),
-            os.path.expanduser("~/Desktop"),
+        raw_dirs = self.config.get("search_dirs", [
+            "~/Documents",
+            "~/Downloads",
+            "~/Desktop",
         ])
+        # Expand ~ so paths like "~/Documents" resolve correctly regardless
+        # of whether they come from config YAML or the fallback defaults.
+        search_dirs = [os.path.expanduser(d) for d in raw_dirs]
         results = []
         for directory in search_dirs:
             pattern = os.path.join(directory, "**", f"*{query}*")

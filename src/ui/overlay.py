@@ -101,10 +101,14 @@ class OverlayWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self._state       = "idle"
-        self._pulse_on    = True
-        self._pulse_color = "#444444"
-        self._pulse_dim   = "rgba(68,68,68,0.2)"
+        self._state          = "idle"
+        self._pulse_on       = True
+        self._pulse_color    = "#444444"
+        self._pulse_dim      = "rgba(68,68,68,0.2)"
+        self._footer_default = "Diga VOX para ativar"
+        # Tracks the configured language mode so the badge can be restored
+        # after a transient detected-language display.
+        self._lang_mode_text = "AUTO"
 
         self._setup_window()
         self._setup_ui()
@@ -242,7 +246,7 @@ class OverlayWindow(QWidget):
         footer_row.setContentsMargins(0, 0, 0, 0)
         footer_row.setSpacing(0)
 
-        self._footer = QLabel("Diga VOX para ativar")
+        self._footer = QLabel(self._footer_default)
         self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
 
         self._lang_badge = ClickableLabel("AUTO")
@@ -282,11 +286,54 @@ class OverlayWindow(QWidget):
 
     # ── State slots ───────────────────────────────────────────────────────────
 
+    @pyqtSlot(str)
+    def set_footer_mode(self, mode: str):
+        """Update footer hint text based on activation mode."""
+        if mode == "push_to_talk":
+            key = "Ctrl+Shift"
+            self._footer_default = f"Pressione {key} para ativar"
+        else:
+            self._footer_default = "Diga VOX para ativar"
+        self._footer.setText(self._footer_default)
+
+    @pyqtSlot(str)
+    def set_footer_mode_with_key(self, mode: str, key: str):
+        """Update footer hint text with a specific push-to-talk key label."""
+        if mode == "push_to_talk":
+            self._footer_default = f"Pressione {key.upper()} para ativar"
+        else:
+            self._footer_default = "Diga VOX para ativar"
+        self._footer.setText(self._footer_default)
+
+    @pyqtSlot(str)
+    def show_info_notice(self, message: str, duration_ms: int = 4000):
+        """Temporarily show an informational notice in the footer area."""
+        self._footer.setText(message)
+        self._footer.setVisible(True)
+        self._footer.setStyleSheet(f"color: #F59E0B; font-size: 10px; {_BG}")
+        QTimer.singleShot(duration_ms, self._restore_footer)
+
+    def _restore_footer(self):
+        self._footer.setText(self._footer_default)
+        self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
+
+    @pyqtSlot()
+    def set_cancelled(self):
+        """Briefly show 'cancelado' then return to idle."""
+        self._state = "idle"
+        self._set_status("cancelado", "#EF4444")
+        self._waveform.set_active(False)
+        self._response.setText("")
+        self._footer.setVisible(False)
+        self._idle_timer.start(1500)
+
     @pyqtSlot()
     def set_idle(self):
         self._state = "idle"
         self._set_status("inativo", "#444444")
         self._waveform.set_active(False)
+        self._footer.setText(self._footer_default)
+        self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
         self._footer.setVisible(True)
         self._idle_timer.start(5000)
 
@@ -359,15 +406,31 @@ class OverlayWindow(QWidget):
 
     @pyqtSlot(str)
     def set_language_mode(self, mode: str):
+        """Update the badge to reflect the configured language mode.
+
+        This is the authoritative label.  It is stored so the badge can be
+        restored after a transient detected-language display.
+        """
         labels = {"auto": "AUTO", "pt": "PT", "en": "EN"}
-        self._lang_badge.setText(labels.get(mode, mode.upper()[:4]))
+        text = labels.get(mode, mode.upper()[:4])
+        self._lang_mode_text = text
+        self._lang_badge.setText(text)
 
     @pyqtSlot(str)
     def show_detected_language(self, lang: str):
-        """Briefly highlight the badge with the detected language."""
+        """Transiently highlight the badge with the detected language.
+
+        The badge is restored to the configured language mode after 3 seconds
+        so the user's selected mode never appears to have changed on its own.
+        """
         labels = {"pt": "PT", "en": "EN", "portuguese": "PT", "english": "EN"}
         display = labels.get(lang.lower(), lang.upper()[:2])
         self._lang_badge.setText(display)
+        QTimer.singleShot(3000, self._restore_language_badge)
+
+    def _restore_language_badge(self):
+        """Restore badge to the currently configured language mode."""
+        self._lang_badge.setText(self._lang_mode_text)
 
     def _auto_hide(self):
         self._transcript.setText("–")
@@ -375,6 +438,7 @@ class OverlayWindow(QWidget):
             f"color: rgba(255,255,255,0.2); font-size: 13px; {_BG}"
         )
         self._response.setText("")
+        self.hide()
 
     # ── Drag ─────────────────────────────────────────────────────────────────
 
