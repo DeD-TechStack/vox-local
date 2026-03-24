@@ -26,33 +26,22 @@ app_aliases:
   vs code: code
   vscode: code
 chunk_duration: 2.0
-<<<<<<< HEAD
 language: pt
-max_record_duration: 30
-mic_device: 9
-min_listen_duration: 1.0
-ollama_model: qwen2.5:3b
-ollama_url: http://localhost:11434
-output_device: 12
-=======
-language: auto
 max_history: 20
-max_record_duration: 30
-mic_device:
-ollama_model: qwen2.5:7b
+mic_device: null
+ollama_model: qwen2.5:14b
 ollama_url: http://localhost:11434
-output_device:
->>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
+output_device: null
 piper_path: piper/piper/piper.exe
 push_to_talk_key: ctrl+shift
 search_dirs:
 - ~/Documents
 - ~/Downloads
 - ~/Desktop
-silence_duration: 2.0
-silence_threshold: 0.02
+silence_duration: 1.5
+silence_threshold: 0.01
 tts_enabled: true
-voice_model: voices/pt_BR-faber-medium.onnx
+voice_model: voices/en_US-ryan-high.onnx
 wake_word: vox
 whisper_compute_type: int8
 whisper_device: cpu

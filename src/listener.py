@@ -14,12 +14,7 @@ log = get_logger("Listener")
 
 
 def _extract_post_wake(text: str, wake_word: str) -> str:
-    """Return text that follows the wake word in a transcription string.
-
-    Uses a word-boundary regex so the wake word is matched as a whole word.
-    Returns the stripped tail, or "" if the wake word is absent or nothing
-    meaningful follows it.
-    """
+    """Return text that follows the wake word in a transcription string."""
     pattern = rf'\b{re.escape(wake_word)}\b'
     match = re.search(pattern, text, flags=re.IGNORECASE)
     if match:
@@ -44,11 +39,6 @@ class Listener(QThread):
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def stop_listener(self):
-        """Signal the listening loop to exit at the next opportunity.
-
-        The loop is checked between blocking audio calls, so the actual stop
-        may take up to chunk_duration seconds (≤ 2 s by default).
-        """
         self._stop_flag.set()
 
     # ── Entry point ───────────────────────────────────────────────────────────
@@ -56,11 +46,7 @@ class Listener(QThread):
     def run(self):
         self._stop_flag.clear()
         self._print_devices()
-<<<<<<< HEAD
         self._validate_mic_device()
-        log.info(f"Wake word mode active. Say '{self._wake_word}' to activate.")
-        self._run_wake_word_loop()
-=======
         activation_mode = self.config.get("activation_mode", "wake_word")
         if activation_mode == "push_to_talk":
             ptt_key = self.config.get("push_to_talk_key", "ctrl+shift")
@@ -70,7 +56,6 @@ class Listener(QThread):
             wake_word = self.config.get("wake_word", "vox").lower().strip()
             log.info(f"Wake word mode active. Say '{wake_word}' to activate.")
             self._run_wake_word_loop()
->>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
 
     def _validate_mic_device(self):
         mic_device = self.config.get("mic_device", None)
@@ -83,7 +68,7 @@ class Listener(QThread):
         except Exception as e:
             log.warning(f"Could not validate mic_device {mic_device}: {e}")
 
-    # ── Wake word loop ────────────────────────────────────────────────────────
+    # ── Device helpers ────────────────────────────────────────────────────────
 
     def _get_device_channels(self, mic_device) -> int:
         """Return the number of input channels supported by the device (min 1)."""
@@ -93,25 +78,20 @@ class Listener(QThread):
         except Exception:
             return 1
 
+    # ── Wake word loop ────────────────────────────────────────────────────────
+
     def _run_wake_word_loop(self):
-<<<<<<< HEAD
-        mic_device      = self.config.get("mic_device", None)
-        channels        = self._get_device_channels(mic_device)
-        chunk_samples   = int(self.SAMPLE_RATE * self._chunk_duration)
-        silence_samples = int(self.SAMPLE_RATE * self._silence_duration)
-=======
         _backoff = 0.0
->>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
 
         while not self._stop_flag.is_set():
             try:
-                # Re-read settings each iteration so runtime changes apply.
                 mic_device       = self.config.get("mic_device", None)
                 wake_word        = self.config.get("wake_word", "vox").lower().strip()
-                chunk_duration   = float(self.config.get("chunk_duration",   2.0))
-                silence_duration = float(self.config.get("silence_duration",  1.5))
+                chunk_duration   = float(self.config.get("chunk_duration", 2.0))
+                silence_duration = float(self.config.get("silence_duration", 2.0))
                 chunk_samples    = int(self.SAMPLE_RATE * chunk_duration)
                 silence_samples  = int(self.SAMPLE_RATE * silence_duration)
+                channels         = self._get_device_channels(mic_device)
 
                 chunk = sd.rec(
                     chunk_samples,
@@ -122,17 +102,14 @@ class Listener(QThread):
                 )
                 sd.wait()
 
-<<<<<<< HEAD
-                audio    = chunk.mean(axis=1) if chunk.ndim > 1 and chunk.shape[1] > 1 else chunk.flatten()
-                rms = float(np.sqrt(np.mean(audio ** 2)))
-                log.debug(f"[wake] chunk rms={rms:.4f}")
-=======
                 if self._stop_flag.is_set():
                     break
 
-                audio     = chunk.flatten()
->>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
-                lang_cfg  = self.config.get("language", "auto")
+                audio = chunk.mean(axis=1) if chunk.ndim > 1 and chunk.shape[1] > 1 else chunk.flatten()
+                rms   = float(np.sqrt(np.mean(audio ** 2)))
+                log.debug(f"[wake] chunk rms={rms:.4f}")
+
+                lang_cfg   = self.config.get("language", "auto")
                 lang_param = None if lang_cfg == "auto" else lang_cfg
                 segments, _ = self.model.transcribe(
                     audio,
@@ -144,13 +121,7 @@ class Listener(QThread):
                     log.info(f"[wake] heard: '{text}'")
 
                 if wake_word in text:
-                    # Extract any command text that followed the wake word within
-                    # the same audio chunk.  If the user says "vox open spotify"
-                    # in one breath, this tail ("open spotify") is preserved so
-                    # it isn't silently lost when the command recording phase
-                    # produces only silence.
                     tail_text = _extract_post_wake(text, wake_word)
-                    # Discard single-character tails — likely transcription noise.
                     if len(tail_text) <= 1:
                         tail_text = ""
 
@@ -162,16 +133,15 @@ class Listener(QThread):
                     if command_audio is not None:
                         self._transcribe_and_emit(command_audio, fallback_text=tail_text)
                     elif tail_text:
-                        # No additional audio — use same-chunk tail directly.
                         log.info(f"Using wake-word chunk tail as command: '{tail_text}'")
                         self.transcription_ready.emit(tail_text)
 
-                _backoff = 0.0  # reset backoff on a successful iteration
+                _backoff = 0.0
 
             except sd.PortAudioError as e:
-                log.error(f"Audio device error: {e} — retrying with default device")
-                mic_device = None
-                channels   = self._get_device_channels(mic_device)
+                log.error(f"Audio device error: {e}")
+                _backoff = min(_backoff + 1.0, 5.0)
+                time.sleep(_backoff)
             except Exception as e:
                 log.error(f"Wake word loop error: {e}")
                 _backoff = min(_backoff + 1.0, 5.0)
@@ -179,16 +149,13 @@ class Listener(QThread):
                     log.info(f"Backing off {_backoff:.0f}s before retrying…")
                 time.sleep(_backoff)
 
-    # ── Push-to-talk loop ────────────────────────────────────────────────────
+    # ── Push-to-talk loop ─────────────────────────────────────────────────────
 
     def _run_push_to_talk_loop(self):
         try:
             import keyboard
         except ImportError:
-            log.error(
-                "push_to_talk mode requires the 'keyboard' package. "
-                "Install it with: pip install keyboard"
-            )
+            log.error("push_to_talk mode requires the 'keyboard' package. Install it with: pip install keyboard")
             return
 
         _backoff = 0.0
@@ -197,11 +164,10 @@ class Listener(QThread):
             try:
                 mic_device       = self.config.get("mic_device", None)
                 ptt_key          = self.config.get("push_to_talk_key", "ctrl+shift")
-                silence_duration = float(self.config.get("silence_duration",  1.5))
+                silence_duration = float(self.config.get("silence_duration", 2.0))
                 silence_samples  = int(self.SAMPLE_RATE * silence_duration)
                 keys = [k.strip() for k in ptt_key.split("+")]
 
-                # Block until ALL keys in the combo are pressed simultaneously.
                 keyboard.wait(ptt_key)
 
                 if self._stop_flag.is_set():
@@ -210,15 +176,12 @@ class Listener(QThread):
                 log.info("Push-to-talk activated — listening…")
                 self.listening_started.emit()
 
-                command_audio = self._record_push_to_talk(
-                    mic_device, silence_samples, keyboard, keys
-                )
+                command_audio = self._record_push_to_talk(mic_device, silence_samples, keyboard, keys)
                 self.listening_stopped.emit()
 
                 if command_audio is not None:
                     self._transcribe_and_emit(command_audio)
 
-                # Wait for all keys to be fully released before next trigger.
                 for k in keys:
                     try:
                         keyboard.wait(k, suppress=False, trigger_on_release=True)
@@ -234,25 +197,17 @@ class Listener(QThread):
                     log.info(f"Backing off {_backoff:.0f}s before retrying…")
                 time.sleep(_backoff)
 
-    def _record_push_to_talk(
-        self, mic_device, silence_samples: int, keyboard, keys: list[str]
-    ):
+    def _record_push_to_talk(self, mic_device, silence_samples: int, keyboard, keys: list[str]):
         """Record while keys are held; stop on silence or key release."""
-        all_chunks         = []
+        all_chunks        = []
         consecutive_silent = 0
-        chunk_size         = self.SAMPLE_RATE // 2  # 0.5 s read chunks
-        max_samples        = int(
-            self.SAMPLE_RATE * float(self.config.get("max_record_duration", 30))
-        )
+        chunk_size         = self.SAMPLE_RATE // 2
+        max_samples        = int(self.SAMPLE_RATE * float(self.config.get("max_record_duration", 30)))
         total_samples      = 0
-        silence_threshold  = float(self.config.get("silence_threshold", 0.01))
+        silence_threshold  = float(self.config.get("silence_threshold", 0.02))
+        channels           = self._get_device_channels(mic_device)
 
-        stream = sd.InputStream(
-            samplerate=self.SAMPLE_RATE,
-            channels=self.CHANNELS,
-            dtype="float32",
-            device=mic_device,
-        )
+        stream = sd.InputStream(samplerate=self.SAMPLE_RATE, channels=channels, dtype="float32", device=mic_device)
         stream.start()
         try:
             while True:
@@ -279,34 +234,24 @@ class Listener(QThread):
             stream.close()
 
         if all_chunks:
-            return np.concatenate(all_chunks, axis=0).flatten()
+            audio = np.concatenate(all_chunks, axis=0)
+            return audio.mean(axis=1) if audio.ndim > 1 and audio.shape[1] > 1 else audio.flatten()
         return None
 
     # ── Shared recording helpers ──────────────────────────────────────────────
 
     def _record_until_silence(self, mic_device, silence_samples: int):
-        """Record audio until silence_samples consecutive silent samples.
-
-        Returns a flat float32 ndarray, or None if no audio was captured.
-        """
+        """Record audio until silence_samples consecutive silent samples."""
         all_chunks         = []
         consecutive_silent = 0
-        chunk_size         = self.SAMPLE_RATE // 2  # 0.5 s read chunks
+        chunk_size         = self.SAMPLE_RATE // 2
         max_samples        = int(self.SAMPLE_RATE * float(self.config.get("max_record_duration", 30)))
         min_samples        = int(self.SAMPLE_RATE * float(self.config.get("min_listen_duration", 1.0)))
         total_samples      = 0
-<<<<<<< HEAD
+        silence_threshold  = float(self.config.get("silence_threshold", 0.02))
         channels           = self._get_device_channels(mic_device)
-=======
-        silence_threshold  = float(self.config.get("silence_threshold", 0.01))
->>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
 
-        stream = sd.InputStream(
-            samplerate=self.SAMPLE_RATE,
-            channels=channels,
-            dtype="float32",
-            device=mic_device,
-        )
+        stream = sd.InputStream(samplerate=self.SAMPLE_RATE, channels=channels, dtype="float32", device=mic_device)
         stream.start()
         try:
             while True:
@@ -314,11 +259,7 @@ class Listener(QThread):
                 all_chunks.append(data.copy())
                 total_samples += chunk_size
                 rms = float(np.sqrt(np.mean(data ** 2)))
-<<<<<<< HEAD
-                if total_samples >= min_samples and rms < self._silence_threshold:
-=======
-                if rms < silence_threshold:
->>>>>>> 8b989ec9f01e05c7be92a89ead461468724abb2f
+                if total_samples >= min_samples and rms < silence_threshold:
                     consecutive_silent += chunk_size
                     if consecutive_silent >= silence_samples:
                         break
@@ -337,33 +278,15 @@ class Listener(QThread):
         return None
 
     def _transcribe_and_emit(self, audio: np.ndarray, fallback_text: str = ""):
-        """Transcribe audio and emit the result.
-
-        If the transcription is empty (e.g. the user had already finished
-        speaking before the command-recording phase began), fall back to
-        ``fallback_text`` when provided — typically the text that followed
-        the wake word in the same detection chunk.
-        """
         lang_cfg   = self.config.get("language", "auto")
         lang_param = None if lang_cfg == "auto" else lang_cfg
-        segments, info = self.model.transcribe(
-            audio,
-            language=lang_param,
-            beam_size=5,
-        )
+        segments, info = self.model.transcribe(audio, language=lang_param, beam_size=5)
         detected = getattr(info, "language", lang_cfg) or "auto"
         self.language_detected.emit(detected)
         text = " ".join(s.text.strip() for s in segments).strip()
 
-        # Strip a leading wake-word echo in case the mic captured it again
-        # during the command-recording phase.
         wake_word = self.config.get("wake_word", "vox").lower().strip()
-        text = re.sub(
-            rf"^\s*{re.escape(wake_word)}\s*",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        ).strip()
+        text = re.sub(rf"^\s*{re.escape(wake_word)}\s*", "", text, flags=re.IGNORECASE).strip()
 
         if not text and fallback_text:
             text = fallback_text
