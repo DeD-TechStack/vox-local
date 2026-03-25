@@ -3,6 +3,7 @@ import tempfile
 import os
 import wave
 import threading
+from typing import Callable
 
 import numpy as np
 import sounddevice as sd
@@ -17,6 +18,8 @@ class Speaker:
     def __init__(self, config: Config):
         self.config = config
         self._lock = threading.Lock()
+        self._on_speak_start: Callable | None = None
+        self._on_speak_end:   Callable | None = None
         self._reload()
 
     def _reload(self):
@@ -37,6 +40,20 @@ class Speaker:
     def reload_config(self):
         self._reload()
 
+    def set_speaking_callbacks(
+        self,
+        on_start: Callable | None = None,
+        on_end:   Callable | None = None,
+    ) -> None:
+        """Register callbacks that fire when TTS starts and finishes.
+
+        Both callbacks are invoked from the speaker's background thread.
+        If they emit Qt signals the cross-thread queued-connection mechanism
+        ensures the slot runs on the main thread automatically.
+        """
+        self._on_speak_start = on_start
+        self._on_speak_end   = on_end
+
     def speak(self, text: str):
         if not self.enabled or not text:
             return
@@ -44,42 +61,54 @@ class Speaker:
         thread.start()
 
     def _speak_blocking(self, text: str):
-        with self._lock:
-            wav_path = None
+        if self._on_speak_start:
             try:
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                    wav_path = f.name
+                self._on_speak_start()
+            except Exception:
+                pass
+        try:
+            with self._lock:
+                wav_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                        wav_path = f.name
 
-                proc = subprocess.run(
-                    [self.piper_path, "--model", self.voice_model, "--output_file", wav_path],
-                    input=text.encode("utf-8"),
-                    capture_output=True,
-                    timeout=15,
-                )
+                    proc = subprocess.run(
+                        [self.piper_path, "--model", self.voice_model, "--output_file", wav_path],
+                        input=text.encode("utf-8"),
+                        capture_output=True,
+                        timeout=15,
+                    )
 
-                if proc.returncode != 0:
-                    stderr_msg = proc.stderr.decode("utf-8", errors="replace").strip()
-                    if stderr_msg:
-                        log.error(f"Piper error (exit {proc.returncode}): {stderr_msg}")
-                    else:
-                        log.error(f"Piper exited with code {proc.returncode} and no stderr output.")
-                    return
+                    if proc.returncode != 0:
+                        stderr_msg = proc.stderr.decode("utf-8", errors="replace").strip()
+                        if stderr_msg:
+                            log.error(f"Piper error (exit {proc.returncode}): {stderr_msg}")
+                        else:
+                            log.error(f"Piper exited with code {proc.returncode} and no stderr output.")
+                        return
 
-                if not os.path.exists(wav_path):
-                    log.error("Piper exited successfully but produced no output file.")
-                    return
+                    if not os.path.exists(wav_path):
+                        log.error("Piper exited successfully but produced no output file.")
+                        return
 
-                self._play_wav(wav_path)
+                    self._play_wav(wav_path)
 
-            except FileNotFoundError:
-                log.error("Piper not found. Check piper_path in settings.yaml")
-            except subprocess.TimeoutExpired:
-                log.error("Piper timed out after 15 s.")
-            except Exception as e:
-                log.error(f"TTS error: {e}")
-            finally:
-                if wav_path and os.path.exists(wav_path):
-                    os.unlink(wav_path)
+                except FileNotFoundError:
+                    log.error("Piper not found. Check piper_path in settings.yaml")
+                except subprocess.TimeoutExpired:
+                    log.error("Piper timed out after 15 s.")
+                except Exception as e:
+                    log.error(f"TTS error: {e}")
+                finally:
+                    if wav_path and os.path.exists(wav_path):
+                        os.unlink(wav_path)
+        finally:
+            if self._on_speak_end:
+                try:
+                    self._on_speak_end()
+                except Exception:
+                    pass
 
     def _play_wav(self, path: str):
         with wave.open(path, "rb") as wf:

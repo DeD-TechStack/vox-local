@@ -257,7 +257,6 @@ Overlay HUD + Control Center — show transcript, response, history, diagnostics
 | `mic_device` | `null` | Microphone device index (`null` = system default) |
 | `output_device` | `null` | Speaker device index (`null` = system default) |
 | `max_history` | `20` | Max conversation turns kept in memory |
-| `chunk_duration` | `2.0` | Seconds per wake-word detection chunk |
 | `silence_threshold` | `0.01` | RMS below which audio is silent |
 | `silence_duration` | `1.5` | Seconds of silence that ends a command |
 | `app_aliases` | see file | Map spoken names → executables or URI schemes |
@@ -269,6 +268,7 @@ Overlay HUD + Control Center — show transcript, response, history, diagnostics
 - `language`, `wake_word` — next recognition cycle
 - `tts_enabled`, `voice_model`, `piper_path` — next TTS call
 - `ollama_model`, `ollama_url` — next LLM request
+- `allowed_actions` — next LLM call (both the prompt and executor allowlist update together)
 - `activation_mode`, `push_to_talk_key` — next listener iteration
 - Audio devices — output: immediate; microphone: listener restarts automatically
 
@@ -338,6 +338,7 @@ Check the **Directories** tab in the Control Center — verify the correct direc
 - **open_app on Linux** for plain executable names uses PATH directly. Apps not in PATH must be aliased with their full path in the **Aliases** tab.
 - **TTS interruption** is not implemented within a single response — Piper generates full audio before playback begins.
 - **Barge-in** (speaking while VOX is responding) cancels LLM generation but the in-flight TTS audio plays to completion.
+- **Speaking state** is truthfully tracked: the overlay shows "speaking" while Piper plays audio and transitions to "idle" only after playback finishes. When TTS is disabled, the transition to idle is immediate.
 - **Whisper settings** (`whisper_model`, `whisper_device`, `whisper_compute_type`) are not exposed in the Control Center UI — they require a YAML edit and application restart.
 
 ---

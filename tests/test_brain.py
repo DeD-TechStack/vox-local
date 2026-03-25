@@ -11,7 +11,7 @@ import yaml
 import pytest
 from unittest.mock import patch, MagicMock
 
-from brain import _extract_action, Brain
+from brain import _extract_action, _build_system_prompt, _ACTION_DOCS, Brain
 from utils.config import Config
 from executor import Executor
 
@@ -176,3 +176,64 @@ class TestBrainProcess:
                 brain.process(f"message {i}")
 
         assert len(brain.history) <= 4
+
+    def test_process_uses_live_config_url(self, tmp_path):
+        """Brain reads ollama_url from config on each call, not cached at init."""
+        brain = _make_brain(tmp_path)
+        brain.config.set("ollama_url", "http://custom-host:9999")
+        mock_resp = _mock_stream_response("ok")
+        with patch("requests.post", return_value=mock_resp) as mock_post:
+            brain.process("hello")
+        call_url = mock_post.call_args[0][0]
+        assert "custom-host:9999" in call_url
+
+    def test_process_uses_live_config_model(self, tmp_path):
+        """Brain reads ollama_model from config on each call."""
+        brain = _make_brain(tmp_path)
+        brain.config.set("ollama_model", "llama3:8b")
+        mock_resp = _mock_stream_response("ok")
+        with patch("requests.post", return_value=mock_resp) as mock_post:
+            brain.process("hello")
+        payload = mock_post.call_args[1]["json"]
+        assert payload["model"] == "llama3:8b"
+
+
+# ---------------------------------------------------------------------------
+# _build_system_prompt
+# ---------------------------------------------------------------------------
+
+class TestBuildSystemPrompt:
+    def _action_list_section(self, prompt: str) -> str:
+        """Extract the AÇÕES DISPONÍVEIS block from the prompt."""
+        marker = "AÇÕES DISPONÍVEIS:"
+        end_marker = "EXEMPLOS"
+        start = prompt.find(marker)
+        if start == -1:
+            return prompt
+        end = prompt.find(end_marker, start)
+        return prompt[start:end] if end != -1 else prompt[start:]
+
+    def test_includes_only_allowed_actions(self):
+        allowed = ["show_time", "open_app"]
+        prompt = _build_system_prompt(allowed)
+        section = self._action_list_section(prompt)
+        assert "show_time" in section
+        assert "open_app" in section
+        assert "set_volume" not in section
+
+    def test_empty_allowed_shows_none_message(self):
+        prompt = _build_system_prompt([])
+        assert "none" in prompt.lower() or "disabled" in prompt.lower()
+
+    def test_all_actions_when_all_allowed(self):
+        allowed = list(_ACTION_DOCS.keys())
+        prompt = _build_system_prompt(allowed)
+        section = self._action_list_section(prompt)
+        for action in allowed:
+            assert action in section
+
+    def test_unknown_action_ignored(self):
+        prompt = _build_system_prompt(["show_time", "nonexistent_action"])
+        section = self._action_list_section(prompt)
+        assert "show_time" in section
+        assert "nonexistent_action" not in section

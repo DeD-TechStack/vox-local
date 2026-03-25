@@ -36,6 +36,17 @@ class Executor:
             "show_battery":     self._show_battery,
         }
 
+    def reload_config(self) -> None:
+        """Refresh allowed_actions from the current config.
+
+        Call this after the user saves changes in the Actions tab so that
+        changes take effect immediately without restarting the application.
+        """
+        self.allowed_actions = set(self.config.get(
+            "allowed_actions", list(self._action_map.keys())
+        ))
+        log.info(f"Executor: allowed_actions refreshed ({len(self.allowed_actions)} actions).")
+
     def run(self, action: str, params: dict[str, Any]) -> str:
         if action not in self.allowed_actions:
             return f"Ação '{action}' não está permitida."

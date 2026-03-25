@@ -10,7 +10,6 @@ DEFAULT_CONFIG = {
 
     # ── Wake word ────────────────────────────────────────────────────────────
     "wake_word":         "vox",
-    "chunk_duration":    2.0,    # seconds per wake-word detection chunk
     "silence_threshold": 0.01,   # RMS threshold below which audio is considered silent
     "silence_duration":  1.5,    # seconds of silence that ends a command
 

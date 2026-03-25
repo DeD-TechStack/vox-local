@@ -156,6 +156,7 @@ def run_app(config: Config, whisper_model):
             self.control_center = ControlCenter(
                 config, self.state, self.speaker,
                 stt_cb=self._stt_test_transcribe,
+                executor=self.executor,
             )
             self._brain_worker  = None
 
@@ -203,6 +204,18 @@ def run_app(config: Config, whisper_model):
             # Control center actions
             self.control_center.restart_listener_requested.connect(self._restart_listener)
             self.control_center.rerun_validation_requested.connect(self._rerun_validation)
+
+            # Speaking lifecycle — callbacks fire from Speaker's background thread.
+            # We route through AppState signals so Qt queues the slot calls on the
+            # main thread automatically (cross-thread queued-connection safety).
+            self.speaker.set_speaking_callbacks(
+                on_start=self.state.speaking_started.emit,
+                on_end=self.state.speaking_ended.emit,
+            )
+            self.state.speaking_started.connect(self.overlay.set_speaking)
+            self.state.speaking_started.connect(lambda: self.state.set_status("speaking"))
+            self.state.speaking_ended.connect(self.overlay.set_idle)
+            self.state.speaking_ended.connect(lambda: self.state.set_status("idle"))
 
             # Ollama ping timer
             self._ollama_timer = QTimer()
@@ -360,9 +373,13 @@ def run_app(config: Config, whisper_model):
                 self.state.set_response(response)
                 self.state.add_history_entry(transcript, response)
 
+            tts_enabled = config.get("tts_enabled", True)
             self.speaker.speak(response)
-            self.overlay.set_idle()
-            self.state.set_status("idle")
+            # When TTS is enabled the speaking_ended signal drives the idle transition.
+            # When TTS is disabled speaker.speak() is a no-op, so go idle immediately.
+            if not tts_enabled:
+                self.overlay.set_idle()
+                self.state.set_status("idle")
 
         # ── Run ───────────────────────────────────────────────────────────────
 

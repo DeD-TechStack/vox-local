@@ -361,6 +361,7 @@ class AudioTab(_SettingsPanel):
     _mic_test_error = pyqtSignal(str)
     _calib_done     = pyqtSignal(dict)            # calibration result dict
     _calib_error    = pyqtSignal(str)
+    _calib_phase    = pyqtSignal(str)             # status text update from background thread
     _stt_done       = pyqtSignal(str, str, str)   # transcript, quality_label, explanation
     _stt_error      = pyqtSignal(str)
 
@@ -534,6 +535,12 @@ class AudioTab(_SettingsPanel):
 
     def _connect(self) -> None:
         self._state.mic_level_changed.connect(self._mic_bar.set_level)
+        self._calib_phase.connect(self._on_calib_phase)
+
+    @pyqtSlot(str)
+    def _on_calib_phase(self, text: str) -> None:
+        self._calib_status.setText(text)
+        self._calib_status.setStyleSheet(f"color: {_WARNING}; font-size: 11px;")
 
     def _populate_devices(self) -> None:
         self._combo_in.clear()
@@ -652,7 +659,7 @@ class AudioTab(_SettingsPanel):
                 noise_floor   = estimate_noise_floor(silence_audio)
 
                 # Phase 2: speech
-                self._calib_status.setText("Phase 2/2 — Speak normally for 3 seconds…")
+                self._calib_phase.emit("Phase 2/2 — Speak normally for 3 seconds…")
                 speech_data = sd.rec(SR * 3, samplerate=SR, channels=1,
                                      dtype="float32", device=mic_idx)
                 sd.wait()
@@ -826,13 +833,6 @@ class ActivationTab(_SettingsPanel):
         self._edit_ww.setPlaceholderText("vox")
         wv.addWidget(self._edit_ww, 0, 1)
 
-        wv.addWidget(_section("Chunk Duration (s)"), 1, 0)
-        self._spin_chunk = QDoubleSpinBox()
-        self._spin_chunk.setRange(0.5, 5.0)
-        self._spin_chunk.setSingleStep(0.5)
-        self._spin_chunk.setDecimals(1)
-        wv.addWidget(self._spin_chunk, 1, 1)
-
         root.addWidget(grp_ww)
 
         # PTT
@@ -892,7 +892,6 @@ class ActivationTab(_SettingsPanel):
         self._rb_wake.setChecked(mode != "push_to_talk")
         self._rb_ptt.setChecked(mode == "push_to_talk")
         self._edit_ww.setText(str(c.get("wake_word", "vox")))
-        self._spin_chunk.setValue(float(c.get("chunk_duration", 2.0)))
         self._edit_ptt.setText(str(c.get("push_to_talk_key", "ctrl+shift")))
         self._spin_sil_thresh.setValue(float(c.get("silence_threshold", 0.01)))
         self._spin_sil_dur.setValue(float(c.get("silence_duration", 1.5)))
@@ -906,7 +905,6 @@ class ActivationTab(_SettingsPanel):
         mode = "push_to_talk" if self._rb_ptt.isChecked() else "wake_word"
         c.set("activation_mode",   mode)
         c.set("wake_word",         self._edit_ww.text().strip() or "vox")
-        c.set("chunk_duration",    round(self._spin_chunk.value(), 1))
         c.set("push_to_talk_key",  self._edit_ptt.text().strip() or "ctrl+shift")
         c.set("silence_threshold", round(self._spin_sil_thresh.value(), 3))
         c.set("silence_duration",  round(self._spin_sil_dur.value(), 1))
@@ -1033,8 +1031,9 @@ class AssistantTab(_SettingsPanel):
 # ── Tab: Actions & Permissions ─────────────────────────────────────────────────
 
 class ActionsTab(_SettingsPanel):
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, reload_cb: Callable | None = None, parent=None):
         super().__init__(config, parent)
+        self._reload_cb = reload_cb
         self._build()
 
     def _build(self) -> None:
@@ -1123,6 +1122,8 @@ class ActionsTab(_SettingsPanel):
                 enabled.append(action.text())
         self._config.set("allowed_actions", enabled)
         self._config.save()
+        if self._reload_cb:
+            self._reload_cb()
         self._show_saved(self._save_lbl)
 
 
@@ -1425,7 +1426,7 @@ class ControlCenter(QMainWindow):
     rerun_validation_requested = pyqtSignal()
 
     def __init__(self, config: Config, app_state, speaker,
-                 stt_cb: Callable | None = None, parent=None):
+                 stt_cb: Callable | None = None, executor=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("VOX Control Center")
         self.setMinimumSize(720, 560)
@@ -1440,13 +1441,15 @@ class ControlCenter(QMainWindow):
         tabs.setDocumentMode(True)
         tabs.setTabPosition(QTabWidget.TabPosition.North)
 
+        reload_cb = executor.reload_config if executor is not None else None
+
         tabs.addTab(DashboardTab(app_state, config),                              "Dashboard")
         tabs.addTab(AudioTab(config, app_state, speaker,
                              restart_cb=self.restart_listener_requested.emit,
                              stt_cb=stt_cb),                                      "Audio")
         tabs.addTab(ActivationTab(config),                                         "Activation")
         tabs.addTab(AssistantTab(config),                                          "Assistant")
-        tabs.addTab(ActionsTab(config),                                            "Actions")
+        tabs.addTab(ActionsTab(config, reload_cb=reload_cb),                       "Actions")
         tabs.addTab(AliasesTab(config),                                            "Aliases")
         tabs.addTab(DirsTab(config),                                               "Directories")
         tabs.addTab(HistoryTab(app_state),                                         "History")

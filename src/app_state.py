@@ -25,6 +25,8 @@ class AppState(QObject):
     mic_level_changed         = pyqtSignal(float)  # 0.0–1.0 normalised RMS
     language_mode_changed     = pyqtSignal(str)    # configured mode  (auto/pt/en)
     detected_language_changed = pyqtSignal(str)    # transient detected language
+    speaking_started          = pyqtSignal()       # emitted from Speaker thread when TTS begins
+    speaking_ended            = pyqtSignal()       # emitted from Speaker thread when TTS finishes
 
     # ── Diagnostics ───────────────────────────────────────────────────────────
     diagnostic_added  = pyqtSignal(dict)  # {level, message, timestamp}

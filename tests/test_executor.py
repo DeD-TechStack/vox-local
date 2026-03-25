@@ -34,6 +34,36 @@ def _make_config(tmp_path, extra: dict = None) -> Config:
 # Allowlist enforcement
 # ---------------------------------------------------------------------------
 
+class TestReloadConfig:
+    def test_reload_config_picks_up_new_allowed_actions(self, tmp_path):
+        cfg = _make_config(tmp_path, {"allowed_actions": ["show_time"]})
+        ex = Executor(cfg)
+        assert "open_app" not in ex.allowed_actions
+
+        # Simulate user enabling open_app and saving
+        cfg.set("allowed_actions", ["show_time", "open_app"])
+        ex.reload_config()
+        assert "open_app" in ex.allowed_actions
+
+    def test_reload_config_respects_removed_actions(self, tmp_path):
+        cfg = _make_config(tmp_path, {"allowed_actions": ["show_time", "open_app"]})
+        ex = Executor(cfg)
+        assert "open_app" in ex.allowed_actions
+
+        cfg.set("allowed_actions", ["show_time"])
+        ex.reload_config()
+        assert "open_app" not in ex.allowed_actions
+
+    def test_reload_config_with_no_allowed_actions(self, tmp_path):
+        cfg = _make_config(tmp_path, {"allowed_actions": ["show_time"]})
+        ex = Executor(cfg)
+        cfg.set("allowed_actions", [])
+        ex.reload_config()
+        assert len(ex.allowed_actions) == 0
+        result = ex.run("show_time", {})
+        assert "permitida" in result or "permitted" in result.lower()
+
+
 class TestAllowlist:
     def test_disallowed_action_returns_error(self, tmp_path):
         cfg = _make_config(tmp_path, {"allowed_actions": ["show_time"]})

@@ -329,6 +329,11 @@ class OverlayWindow(QWidget):
         self._state = "generating"
         self._set_status("generating", "#A855F7")
 
+    @pyqtSlot()
+    def set_speaking(self):
+        self._state = "speaking"
+        self._set_status("speaking", "#A855F7", pulse=True, dim="rgba(168,85,247,0.25)")
+
     @pyqtSlot(str)
     def set_transcript(self, text: str):
         self._transcript.setText(text)
