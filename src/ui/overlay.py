@@ -50,6 +50,7 @@ class OverlayWindow(QWidget):
     # Human-readable status labels and their colours
     _STATUS_MAP = {
         "idle":         ("idle",          "#444444"),
+        "monitoring":   ("monitoring",    "#1D9E75"),
         "listening":    ("listening",     "#2A6FF5"),
         "transcribing": ("transcribing",  "#F59E0B"),
         "generating":   ("generating",    "#A855F7"),

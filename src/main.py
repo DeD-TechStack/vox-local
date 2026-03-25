@@ -153,7 +153,10 @@ def run_app(config: Config, whisper_model):
 
             # ── UI
             self.overlay        = OverlayWindow()
-            self.control_center = ControlCenter(config, self.state, self.speaker)
+            self.control_center = ControlCenter(
+                config, self.state, self.speaker,
+                stt_cb=self._stt_test_transcribe,
+            )
             self._brain_worker  = None
 
             self._connect_signals()
@@ -173,6 +176,12 @@ def run_app(config: Config, whisper_model):
             self.listener.listening_stopped.connect(self.overlay.set_processing)
             self.listener.listening_stopped.connect(
                 lambda: self.state.set_status("transcribing"))
+
+            self.listener.monitoring_started.connect(
+                lambda: self.state.set_status("monitoring"))
+
+            self.listener.capture_warning.connect(
+                lambda level, msg: self.state.add_diagnostic(level, msg))
 
             self.listener.transcription_ready.connect(self.on_transcription)
             self.listener.language_detected.connect(self.overlay.show_detected_language)
@@ -287,6 +296,18 @@ def run_app(config: Config, whisper_model):
             self.overlay.set_language_mode(nxt)
             self.state.language_mode_changed.emit(nxt)
             log.info(f"Language switched to: {nxt}")
+
+        # ── STT test callback (called from AudioTab worker thread) ───────────
+
+        def _stt_test_transcribe(self, audio) -> str:
+            """Transcribe *audio* with Whisper and return the transcript string.
+
+            Called from a background thread in AudioTab — must not touch Qt.
+            """
+            lang_cfg   = config.get("language", "auto")
+            lang_param = None if lang_cfg == "auto" else lang_cfg
+            segments, _ = whisper_model.transcribe(audio, language=lang_param, beam_size=5)
+            return " ".join(s.text.strip() for s in segments).strip()
 
         # ── Transcription ─────────────────────────────────────────────────────
 

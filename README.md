@@ -26,8 +26,16 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 - **Wake word activation** — say "VOX" to activate; no hotkey required
 - **Push-to-talk mode** — optional `Ctrl+Shift` press-to-talk (configurable)
 - **Same-utterance commands** — "vox open spotify" said in one breath is correctly captured
+- **Accent-tolerant wake word matching** — NFD normalisation + word-boundary check (no substring false positives)
+- **Continuous audio capture** — rolling InputStream with 1.5 s pre-buffer preserves the start of every command
+- **Energy pre-screening** — silent windows skip Whisper entirely, saving CPU
+- **Adaptive noise floor** — exponential moving average tracks ambient noise for reliable VAD
+- **Monitoring state** — overlay and Dashboard show "monitoring" when the wake-word loop is active
 - **Control Center** — full desktop GUI covering all settings, diagnostics, history, and audio testing
 - **Real mic level meter** — live RMS-based input meter in the overlay and Control Center (not fake animation)
+- **Mic calibration** — 2-phase flow (3 s silence + 3 s speech) measures noise floor, SNR, and suggests a silence threshold
+- **Signal health card** — noise floor, SNR, and clipping fraction visible in the Audio tab after calibration
+- **STT test** — record 5 s, run Whisper, see transcript and quality diagnosis directly in the UI
 - **Local LLM** — runs on Ollama (qwen2.5, llama3, mistral, etc.)
 - **Local TTS** — Piper voices, zero latency
 - **Permission system** — editable allowlist of allowed actions, configurable from the GUI
@@ -195,12 +203,23 @@ The allowlist is fully editable from the **Actions** tab in the Control Center.
 ```
 Microphone
     ↓
-faster-whisper — Speech-to-Text (wake word detection)
+sd.InputStream — continuous rolling stream (100 ms reads)
     ↓
-Listener — wake word / push-to-talk activation
+audio_utils — compute_rms, has_sufficient_energy, update_noise_floor
+  · 1.5 s pre-buffer (deque) preserves audio before wake word
+  · energy pre-screening skips Whisper on silent 1 s windows
+  · exponential moving average tracks ambient noise floor
+    ↓
+faster-whisper — Speech-to-Text (wake word detection, beam_size=1)
+  · accent-normalised word-boundary match via audio_utils.wake_word_in_text
+    ↓
+Listener — emits monitoring_started / listening_started / capture_warning
   · emits real RMS mic level → overlay waveform + Control Center meter
     ↓
-faster-whisper — Speech-to-Text (command transcription)
+_record_command_from_stream — captures command audio on existing stream
+  · seeds with pre-buffer to include audio before the wake word was recognised
+    ↓
+faster-whisper — Speech-to-Text (command transcription, beam_size=5)
     ↓
 AppState — central state hub (status, transcript, response, diagnostics, history)
     ↓
@@ -291,6 +310,13 @@ Check that `piper_path` in the **Assistant** tab (or `config/settings.yaml`) poi
 The real-time meter is driven by actual RMS from the microphone. If it never moves:
 - Check that the correct input device is selected in Audio settings
 - Use **Test Microphone** to record 3 seconds and check the peak reading
+- Run **Calibrate** in the Audio tab — a noisy or low-SNR environment shows up in the Signal Health card
+
+**Wake word not detected reliably**
+- Run **Calibrate** to measure your noise floor and apply the suggested silence threshold
+- Run the **STT Test** to verify Whisper can hear and transcribe your voice
+- Check Diagnostics for repeated "silent windows" warnings — this means the mic level is too low
+- VOX now uses accent normalisation and word-boundary matching, so "vóx" and "vox" both work
 
 **VOX says "vox open spotify" instead of "open spotify"**
 This is handled automatically — the listener strips any leading wake-word echo. If it persists, lower `silence_threshold` so command capture starts sooner.
@@ -332,6 +358,15 @@ Check the **Directories** tab in the Control Center — verify the correct direc
 - [x] Mic test and TTS test from UI
 - [x] Allowlist and app aliases editable from UI
 - [x] Central AppState model
+- [x] Continuous InputStream with rolling pre-buffer (no lost command starts)
+- [x] Energy pre-screening (skip Whisper on silent audio)
+- [x] Adaptive noise floor tracking
+- [x] Accent-tolerant, word-boundary wake word matching
+- [x] Monitoring state (overlay + Dashboard show active wake-word loop)
+- [x] Microphone calibration flow (noise floor + SNR + suggested threshold)
+- [x] Signal health card in Audio tab
+- [x] STT test (record + Whisper + quality diagnosis in UI)
+- [x] Capture warnings routed to Diagnostics panel
 - [ ] TTS barge-in / cancellation
 - [ ] Custom action plugins
 - [ ] Conversation memory persistence across restarts

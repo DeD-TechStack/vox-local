@@ -1,6 +1,7 @@
 import re
 import threading
 import time
+from collections import deque
 
 import numpy as np
 import sounddevice as sd
@@ -9,12 +10,22 @@ from faster_whisper import WhisperModel
 
 from utils.config import Config
 from utils.logger import get_logger
+from audio_utils import (
+    wake_word_in_text,
+    compute_rms,
+    normalize_level,
+    has_sufficient_energy,
+    update_noise_floor,
+)
 
 log = get_logger("Listener")
 
 
 def _extract_post_wake(text: str, wake_word: str) -> str:
-    """Return text that follows the wake word in a transcription string."""
+    """Return text that follows the wake word in a transcription string.
+
+    Preserves original casing of the tail (used by existing tests).
+    """
     pattern = rf'\b{re.escape(wake_word)}\b'
     match = re.search(pattern, text, flags=re.IGNORECASE)
     if match:
@@ -27,9 +38,22 @@ class Listener(QThread):
     language_detected   = pyqtSignal(str)
     listening_started   = pyqtSignal()
     listening_stopped   = pyqtSignal()
-    mic_level           = pyqtSignal(float)   # 0.0–1.0 normalised RMS
+    monitoring_started  = pyqtSignal()          # emitted when wake-word loop is active
+    mic_level           = pyqtSignal(float)     # 0.0–1.0 normalised RMS
+    capture_warning     = pyqtSignal(str, str)  # (level, message)
 
     SAMPLE_RATE = 16000
+
+    # Wake-word detection window (seconds of audio fed to Whisper per check)
+    _DETECT_WINDOW_S  = 1.0
+    # Pre-buffer duration (seconds of audio kept before wake word is heard)
+    _PRE_BUFFER_S     = 1.5
+    # Read granularity from the stream
+    _READ_CHUNK_S     = 0.1
+    # Noise floor EMA alpha (higher = slower adaptation)
+    _NF_ALPHA         = 0.97
+    # Number of consecutive empty/near-zero captures before emitting a warning
+    _EMPTY_WARN_AFTER = 5
 
     def __init__(self, config: Config, model: WhisperModel):
         super().__init__()
@@ -79,57 +103,108 @@ class Listener(QThread):
         except Exception:
             return 1
 
-    # ── Wake word loop ────────────────────────────────────────────────────────
+    # ── Wake word loop (continuous InputStream) ───────────────────────────────
 
     def _run_wake_word_loop(self):
-        _backoff = 0.0
+        """Continuously monitor the microphone using a rolling buffer.
+
+        Architecture:
+        - One sd.InputStream per outer-loop iteration (restarted on error)
+        - 1.5 s pre-buffer so the start of the command is preserved
+        - 1.0 s detection window fed to Whisper for wake-word check
+        - Energy pre-screening: skip Whisper on silent windows
+        - Exponential moving average for adaptive noise floor
+        """
+        _backoff       = 0.0
+        _noise_floor   = 0.0
+        _empty_count   = 0
 
         while not self._stop_flag.is_set():
-            try:
-                mic_device       = self.config.get("mic_device", None)
-                wake_word        = self.config.get("wake_word", "vox").lower().strip()
-                chunk_duration   = float(self.config.get("chunk_duration", 2.0))
-                silence_duration = float(self.config.get("silence_duration", 2.0))
-                chunk_samples    = int(self.SAMPLE_RATE * chunk_duration)
-                silence_samples  = int(self.SAMPLE_RATE * silence_duration)
-                channels         = self._get_device_channels(mic_device)
+            mic_device      = self.config.get("mic_device", None)
+            wake_word       = self.config.get("wake_word", "vox").lower().strip()
+            channels        = self._get_device_channels(mic_device)
+            read_samples    = int(self.SAMPLE_RATE * self._READ_CHUNK_S)
+            window_samples  = int(self.SAMPLE_RATE * self._DETECT_WINDOW_S)
+            pre_buf_samples = int(self.SAMPLE_RATE * self._PRE_BUFFER_S)
 
-                chunk = sd.rec(
-                    chunk_samples,
+            pre_buffer  = deque(maxlen=pre_buf_samples)
+            accumulated = []
+            acc_samples = 0
+
+            stream = None
+            try:
+                stream = sd.InputStream(
                     samplerate=self.SAMPLE_RATE,
                     channels=channels,
                     dtype="float32",
                     device=mic_device,
                 )
-                sd.wait()
+                stream.start()
+                self.monitoring_started.emit()
+                log.info("[wake] monitoring stream started")
+                _backoff = 0.0
 
-                if self._stop_flag.is_set():
-                    break
+                while not self._stop_flag.is_set():
+                    data, overflowed = stream.read(read_samples)
+                    if overflowed:
+                        log.debug("[wake] stream overflow — some audio dropped")
 
-                audio = chunk.mean(axis=1) if chunk.ndim > 1 and chunk.shape[1] > 1 else chunk.flatten()
-                rms   = float(np.sqrt(np.mean(audio ** 2)))
-                log.debug(f"[wake] chunk rms={rms:.4f}")
-                self.mic_level.emit(min(1.0, rms / 0.15))
+                    mono = data.mean(axis=1) if data.ndim > 1 and data.shape[1] > 1 else data.flatten()
 
-                lang_cfg   = self.config.get("language", "auto")
-                lang_param = None if lang_cfg == "auto" else lang_cfg
-                segments, _ = self.model.transcribe(
-                    audio,
-                    language=lang_param,
-                    beam_size=1,
-                )
-                text = " ".join(s.text.strip() for s in segments).strip().lower()
-                if text:
-                    log.info(f"[wake] heard: '{text}'")
+                    rms = compute_rms(mono)
+                    self.mic_level.emit(normalize_level(rms))
+                    _noise_floor = update_noise_floor(_noise_floor, rms, alpha=self._NF_ALPHA)
 
-                if wake_word in text:
+                    # Feed the rolling pre-buffer sample-by-sample
+                    for s in mono:
+                        pre_buffer.append(s)
+
+                    accumulated.append(mono)
+                    acc_samples += len(mono)
+
+                    if acc_samples < window_samples:
+                        continue
+
+                    window = np.concatenate(accumulated)
+                    accumulated = []
+                    acc_samples = 0
+
+                    # Skip Whisper on silent windows
+                    if not has_sufficient_energy(window, _noise_floor):
+                        _empty_count += 1
+                        if _empty_count >= self._EMPTY_WARN_AFTER:
+                            self.capture_warning.emit(
+                                "info",
+                                f"[wake] {_empty_count} consecutive silent windows — is the microphone working?",
+                            )
+                            _empty_count = 0
+                        continue
+
+                    _empty_count = 0
+
+                    # Wake word detection — fast (beam_size=1)
+                    lang_cfg   = self.config.get("language", "auto")
+                    lang_param = None if lang_cfg == "auto" else lang_cfg
+                    segments, _ = self.model.transcribe(window, language=lang_param, beam_size=1)
+                    text = " ".join(s.text.strip() for s in segments).strip()
+                    text_lower = text.lower()
+                    if text_lower:
+                        log.debug(f"[wake] heard: '{text_lower}'")
+
+                    if not wake_word_in_text(text_lower, wake_word):
+                        continue
+
+                    # --- Wake word detected ---
                     tail_text = _extract_post_wake(text, wake_word)
                     if len(tail_text) <= 1:
                         tail_text = ""
 
                     log.info("Wake word detected — listening for command…")
                     self.listening_started.emit()
-                    command_audio = self._record_until_silence(mic_device, silence_samples)
+
+                    # Seed command with pre-buffer audio (captures command start)
+                    seed = np.array(list(pre_buffer), dtype=np.float32)
+                    command_audio = self._record_command_from_stream(stream, seed)
                     self.listening_stopped.emit()
 
                     if command_audio is not None:
@@ -138,10 +213,12 @@ class Listener(QThread):
                         log.info(f"Using wake-word chunk tail as command: '{tail_text}'")
                         self.transcription_ready.emit(tail_text)
 
-                _backoff = 0.0
+                    # Restart the monitoring stream after handling a command
+                    break
 
             except sd.PortAudioError as e:
                 log.error(f"Audio device error: {e}")
+                self.capture_warning.emit("error", f"Audio device error: {e}")
                 _backoff = min(_backoff + 1.0, 5.0)
                 time.sleep(_backoff)
             except Exception as e:
@@ -150,6 +227,60 @@ class Listener(QThread):
                 if _backoff > 0:
                     log.info(f"Backing off {_backoff:.0f}s before retrying…")
                 time.sleep(_backoff)
+            finally:
+                if stream is not None:
+                    try:
+                        stream.stop()
+                        stream.close()
+                    except Exception:
+                        pass
+
+    # ── Command capture from existing stream ──────────────────────────────────
+
+    def _record_command_from_stream(
+        self,
+        stream: sd.InputStream,
+        seed: np.ndarray,
+    ) -> np.ndarray | None:
+        """Capture a command on *stream*, prepending pre-buffer *seed*.
+
+        Recording stops when silence_duration of silence is observed or
+        max_record_duration is reached.
+        """
+        all_chunks         = [seed] if seed is not None and seed.size > 0 else []
+        consecutive_silent = 0
+        chunk_size         = self.SAMPLE_RATE // 2
+        max_samples        = int(self.SAMPLE_RATE * float(self.config.get("max_record_duration", 30)))
+        min_samples        = int(self.SAMPLE_RATE * float(self.config.get("min_listen_duration", 1.0)))
+        silence_duration   = float(self.config.get("silence_duration", 2.0))
+        silence_samples    = int(self.SAMPLE_RATE * silence_duration)
+        silence_threshold  = float(self.config.get("silence_threshold", 0.02))
+        total_samples      = seed.size if seed is not None else 0
+
+        while not self._stop_flag.is_set():
+            data, _ = stream.read(chunk_size)
+            mono = data.mean(axis=1) if data.ndim > 1 and data.shape[1] > 1 else data.flatten()
+            all_chunks.append(mono.copy())
+            total_samples += len(mono)
+
+            rms = compute_rms(mono)
+            self.mic_level.emit(normalize_level(rms))
+
+            if total_samples >= min_samples and rms < silence_threshold:
+                consecutive_silent += len(mono)
+                if consecutive_silent >= silence_samples:
+                    break
+            else:
+                consecutive_silent = 0
+
+            if total_samples >= max_samples:
+                log.warning("Max recording duration reached — stopping capture.")
+                break
+
+        if all_chunks:
+            audio = np.concatenate(all_chunks, axis=0)
+            return audio
+        return None
 
     # ── Push-to-talk loop ─────────────────────────────────────────────────────
 
@@ -220,8 +351,8 @@ class Listener(QThread):
                 if not all(keyboard.is_pressed(k) for k in keys):
                     break
 
-                rms = float(np.sqrt(np.mean(data ** 2)))
-                self.mic_level.emit(min(1.0, rms / 0.15))
+                rms = compute_rms(data.mean(axis=1) if data.ndim > 1 and data.shape[1] > 1 else data.flatten())
+                self.mic_level.emit(normalize_level(rms))
                 if rms < silence_threshold:
                     consecutive_silent += chunk_size
                     if consecutive_silent >= silence_samples:
@@ -244,7 +375,11 @@ class Listener(QThread):
     # ── Shared recording helpers ──────────────────────────────────────────────
 
     def _record_until_silence(self, mic_device, silence_samples: int):
-        """Record audio until silence_samples consecutive silent samples."""
+        """Record audio until silence_samples consecutive silent samples.
+
+        Kept for push-to-talk compatibility; wake word path now uses
+        _record_command_from_stream instead.
+        """
         all_chunks         = []
         consecutive_silent = 0
         chunk_size         = self.SAMPLE_RATE // 2
@@ -261,8 +396,8 @@ class Listener(QThread):
                 data, _ = stream.read(chunk_size)
                 all_chunks.append(data.copy())
                 total_samples += chunk_size
-                rms = float(np.sqrt(np.mean(data ** 2)))
-                self.mic_level.emit(min(1.0, rms / 0.15))
+                rms = compute_rms(data.mean(axis=1) if data.ndim > 1 and data.shape[1] > 1 else data.flatten())
+                self.mic_level.emit(normalize_level(rms))
                 if total_samples >= min_samples and rms < silence_threshold:
                     consecutive_silent += chunk_size
                     if consecutive_silent >= silence_samples:
@@ -290,7 +425,13 @@ class Listener(QThread):
         text = " ".join(s.text.strip() for s in segments).strip()
 
         wake_word = self.config.get("wake_word", "vox").lower().strip()
-        text = re.sub(rf"^\s*{re.escape(wake_word)}\s*", "", text, flags=re.IGNORECASE).strip()
+        # Strip leading wake word occurrence (allow trailing punctuation like comma)
+        text = re.sub(
+            rf"^\s*{re.escape(wake_word)}[,.\s]*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ).strip()
 
         if not text and fallback_text:
             text = fallback_text

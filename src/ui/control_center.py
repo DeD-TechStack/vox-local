@@ -15,7 +15,17 @@ import os
 import threading
 from typing import Callable
 
+import numpy as np
 import sounddevice as sd
+
+from audio_utils import (
+    compute_rms,
+    estimate_noise_floor,
+    estimate_speech_rms,
+    suggest_silence_threshold,
+    signal_quality_label,
+    compute_clipping_fraction,
+)
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QPushButton, QComboBox, QLineEdit, QCheckBox,
@@ -326,6 +336,7 @@ class DashboardTab(QWidget):
     def _on_status(self, status: str) -> None:
         _map = {
             "idle":         ("Idle",         _MUTED),
+            "monitoring":   ("Monitoring",   "#1D9E75"),
             "listening":    ("Listening",     "#2A6FF5"),
             "transcribing": ("Transcribing",  _WARNING),
             "generating":   ("Generating",    _ACCENT),
@@ -348,22 +359,39 @@ class DashboardTab(QWidget):
 class AudioTab(_SettingsPanel):
     _mic_test_done  = pyqtSignal(float, float)   # peak, normalised level
     _mic_test_error = pyqtSignal(str)
+    _calib_done     = pyqtSignal(dict)            # calibration result dict
+    _calib_error    = pyqtSignal(str)
+    _stt_done       = pyqtSignal(str, str, str)   # transcript, quality_label, explanation
+    _stt_error      = pyqtSignal(str)
 
     def __init__(self, config: Config, app_state, speaker,
-                 restart_cb: Callable | None = None, parent=None):
+                 restart_cb: Callable | None = None,
+                 stt_cb: Callable | None = None,
+                 parent=None):
         super().__init__(config, parent)
         self._state      = app_state
         self._speaker    = speaker
         self._restart_cb = restart_cb
+        self._stt_cb     = stt_cb   # Callable[[np.ndarray], str] | None
         self._build()
         self._connect()
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
+        # Scrollable root so content is accessible on smaller screens
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        inner = QWidget()
+        scroll.setWidget(inner)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        root = QVBoxLayout(inner)
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(14)
 
-        # Device selection
+        # ── Device selection ───────────────────────────────────────────────────
         grp_dev = QGroupBox("Audio Devices")
         g = QGridLayout(grp_dev)
         g.setColumnMinimumWidth(0, 160)
@@ -383,7 +411,7 @@ class AudioTab(_SettingsPanel):
         root.addWidget(_note("Changing microphone restarts the listener immediately. "
                              "Output changes take effect on next TTS call."))
 
-        # Level meter
+        # ── Level meter ────────────────────────────────────────────────────────
         grp_lvl = QGroupBox("Microphone Level")
         lv = QHBoxLayout(grp_lvl)
         lv.setSpacing(12)
@@ -392,12 +420,65 @@ class AudioTab(_SettingsPanel):
         lv.addWidget(self._mic_bar, 1)
         root.addWidget(grp_lvl)
 
-        # Test buttons
+        # ── Signal health card ─────────────────────────────────────────────────
+        grp_health = QGroupBox("Signal Health")
+        hv = QGridLayout(grp_health)
+        hv.setColumnMinimumWidth(0, 160)
+        hv.setHorizontalSpacing(16)
+        hv.setVerticalSpacing(6)
+        hv.setColumnStretch(1, 1)
+
+        self._lbl_noise    = QLabel("–")
+        self._lbl_snr      = QLabel("–")
+        self._lbl_clip     = QLabel("–")
+        self._lbl_quality  = QLabel("–")
+
+        for row, (label, widget) in enumerate([
+            ("Noise Floor (RMS)", self._lbl_noise),
+            ("SNR",               self._lbl_snr),
+            ("Clipping",          self._lbl_clip),
+            ("Quality",           self._lbl_quality),
+        ]):
+            hv.addWidget(_section(label), row, 0)
+            hv.addWidget(widget, row, 1)
+
+        root.addWidget(grp_health)
+
+        # ── Calibration ────────────────────────────────────────────────────────
+        grp_calib = QGroupBox("Microphone Calibration")
+        cv = QVBoxLayout(grp_calib)
+        cv.setSpacing(8)
+
+        self._calib_status = QLabel(
+            "Run calibration to measure your noise floor and get a recommended silence threshold."
+        )
+        self._calib_status.setWordWrap(True)
+        self._calib_status.setStyleSheet(f"color: {_MUTED}; font-size: 11px;")
+        cv.addWidget(self._calib_status)
+
+        calib_btns = QHBoxLayout()
+        self._btn_calib = QPushButton("Calibrate  (3 s silence + 3 s speech)")
+        calib_btns.addWidget(self._btn_calib)
+        calib_btns.addStretch()
+        cv.addLayout(calib_btns)
+
+        self._calib_result = QLabel("")
+        self._calib_result.setWordWrap(True)
+        self._calib_result.setStyleSheet(f"font-size: 11px;")
+        cv.addWidget(self._calib_result)
+
+        self._btn_apply_thresh = QPushButton("Apply Suggested Threshold")
+        self._btn_apply_thresh.setVisible(False)
+        cv.addWidget(self._btn_apply_thresh)
+
+        root.addWidget(grp_calib)
+
+        # ── Device testing ─────────────────────────────────────────────────────
         grp_test = QGroupBox("Device Testing")
         tv = QVBoxLayout(grp_test)
         test_row = QHBoxLayout()
-        self._btn_mic  = QPushButton("Test Microphone  (3 s)")
-        self._btn_tts  = QPushButton("Test TTS")
+        self._btn_mic = QPushButton("Test Microphone  (3 s)")
+        self._btn_tts = QPushButton("Test TTS")
         test_row.addWidget(self._btn_mic)
         test_row.addWidget(self._btn_tts)
         test_row.addStretch()
@@ -407,17 +488,49 @@ class AudioTab(_SettingsPanel):
         tv.addWidget(self._test_lbl)
         root.addWidget(grp_test)
 
+        # ── STT test ───────────────────────────────────────────────────────────
+        grp_stt = QGroupBox("Speech Recognition Test")
+        sv = QVBoxLayout(grp_stt)
+        sv.setSpacing(8)
+
+        sv.addWidget(_note(
+            "Records 5 s and runs Whisper on the audio to verify speech-to-text quality. "
+            "VOX must be idle (not listening) for this test."
+        ))
+        stt_btns = QHBoxLayout()
+        self._btn_stt = QPushButton("Run STT Test  (5 s)")
+        self._btn_stt.setEnabled(self._stt_cb is not None)
+        stt_btns.addWidget(self._btn_stt)
+        stt_btns.addStretch()
+        sv.addLayout(stt_btns)
+
+        self._stt_result = QLabel("")
+        self._stt_result.setWordWrap(True)
+        self._stt_result.setStyleSheet(f"font-size: 11px;")
+        sv.addWidget(self._stt_result)
+
+        root.addWidget(grp_stt)
         root.addStretch()
 
         save_row, self._save_lbl, btn_save = self._save_row()
         root.addLayout(save_row)
 
+        # Wire up
         self._populate_devices()
         btn_save.clicked.connect(self._save)
         self._btn_mic.clicked.connect(self._test_mic)
         self._btn_tts.clicked.connect(self._test_tts)
+        self._btn_calib.clicked.connect(self._run_calibration)
+        self._btn_stt.clicked.connect(self._run_stt_test)
+        self._btn_apply_thresh.clicked.connect(self._apply_suggested_threshold)
         self._mic_test_done.connect(self._on_mic_done)
         self._mic_test_error.connect(self._on_mic_error)
+        self._calib_done.connect(self._on_calib_done)
+        self._calib_error.connect(self._on_calib_error)
+        self._stt_done.connect(self._on_stt_done)
+        self._stt_error.connect(self._on_stt_error)
+
+        self._suggested_threshold: float | None = None
 
     def _connect(self) -> None:
         self._state.mic_level_changed.connect(self._mic_bar.set_level)
@@ -470,6 +583,8 @@ class AudioTab(_SettingsPanel):
             self._state.add_diagnostic("info", "Microphone device changed — listener restarted.")
         self._show_saved(self._save_lbl, True, msg)
 
+    # ── Mic test ───────────────────────────────────────────────────────────────
+
     def _test_mic(self) -> None:
         self._test_lbl.setText("Recording for 3 s…")
         self._test_lbl.setStyleSheet(f"color: {_WARNING}; font-size: 11px;")
@@ -477,11 +592,11 @@ class AudioTab(_SettingsPanel):
 
         def _record() -> None:
             try:
-                import numpy as np
                 data = sd.rec(int(16000 * 3), samplerate=16000, channels=1,
                               dtype="float32", device=mic_idx)
                 sd.wait()
-                peak  = float(np.max(np.abs(data)))
+                audio = data.flatten()
+                peak  = float(np.max(np.abs(audio)))
                 level = min(1.0, peak / 0.30)
                 self._mic_test_done.emit(peak, level)
             except Exception as exc:
@@ -514,6 +629,164 @@ class AudioTab(_SettingsPanel):
         else:
             self._test_lbl.setText("Speaker unavailable.")
             self._test_lbl.setStyleSheet(f"color: {_ERROR}; font-size: 11px;")
+
+    # ── Calibration ────────────────────────────────────────────────────────────
+
+    def _run_calibration(self) -> None:
+        self._btn_calib.setEnabled(False)
+        self._btn_apply_thresh.setVisible(False)
+        self._suggested_threshold = None
+        self._calib_result.setText("")
+        self._calib_status.setText("Phase 1/2 — Stay silent for 3 seconds…")
+        self._calib_status.setStyleSheet(f"color: {_WARNING}; font-size: 11px;")
+        mic_idx = self._combo_in.currentData()
+
+        def _run() -> None:
+            try:
+                SR = 16000
+                # Phase 1: silence
+                silence_data = sd.rec(SR * 3, samplerate=SR, channels=1,
+                                      dtype="float32", device=mic_idx)
+                sd.wait()
+                silence_audio = silence_data.flatten()
+                noise_floor   = estimate_noise_floor(silence_audio)
+
+                # Phase 2: speech
+                self._calib_status.setText("Phase 2/2 — Speak normally for 3 seconds…")
+                speech_data = sd.rec(SR * 3, samplerate=SR, channels=1,
+                                     dtype="float32", device=mic_idx)
+                sd.wait()
+                speech_audio  = speech_data.flatten()
+                speech_rms    = estimate_speech_rms(speech_audio, noise_floor)
+                clip_frac     = compute_clipping_fraction(speech_audio)
+                suggested     = suggest_silence_threshold(noise_floor)
+                quality, expl = signal_quality_label(noise_floor, speech_rms)
+                snr           = speech_rms / noise_floor if noise_floor > 0 else float("inf")
+
+                self._calib_done.emit({
+                    "noise_floor": noise_floor,
+                    "speech_rms":  speech_rms,
+                    "snr":         snr,
+                    "clip_frac":   clip_frac,
+                    "suggested":   suggested,
+                    "quality":     quality,
+                    "explanation": expl,
+                })
+            except Exception as exc:
+                self._calib_error.emit(str(exc))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    @pyqtSlot(dict)
+    def _on_calib_done(self, result: dict) -> None:
+        self._btn_calib.setEnabled(True)
+        self._calib_status.setText("Calibration complete.")
+        self._calib_status.setStyleSheet(f"color: {_SUCCESS}; font-size: 11px;")
+
+        nf  = result["noise_floor"]
+        snr = result["snr"]
+        cf  = result["clip_frac"]
+        sug = result["suggested"]
+        ql  = result["quality"]
+        ex  = result["explanation"]
+
+        q_color = {
+            "good": _SUCCESS, "fair": _WARNING, "poor": _ERROR, "no_signal": _ERROR
+        }.get(ql, _MUTED)
+
+        lines = [
+            f"Noise floor: {nf:.4f} RMS",
+            f"SNR: {snr:.1f}×" if snr != float('inf') else "SNR: ∞ (perfect silence)",
+            f"Clipping: {cf*100:.1f}%",
+            f"Suggested silence threshold: {sug:.4f}",
+            f"Quality: {ql.upper()} — {ex}",
+        ]
+        self._calib_result.setText("\n".join(lines))
+        self._calib_result.setStyleSheet(f"color: {q_color}; font-size: 11px;")
+
+        self._suggested_threshold = sug
+        self._btn_apply_thresh.setVisible(True)
+
+        # Update health card
+        self._lbl_noise.setText(f"{nf:.4f}")
+        snr_text = f"{snr:.1f}×" if snr != float('inf') else "∞"
+        self._lbl_snr.setText(snr_text)
+        self._lbl_clip.setText(f"{cf*100:.1f}%")
+        self._lbl_clip.setStyleSheet(f"color: {_ERROR if cf > 0.01 else _SUCCESS};")
+        self._lbl_quality.setText(ql.upper())
+        self._lbl_quality.setStyleSheet(f"color: {q_color};")
+
+        self._state.add_diagnostic(
+            "info",
+            f"Calibration: noise_floor={nf:.4f}, SNR={snr_text}, "
+            f"quality={ql}, suggested_threshold={sug:.4f}",
+        )
+
+    @pyqtSlot(str)
+    def _on_calib_error(self, err: str) -> None:
+        self._btn_calib.setEnabled(True)
+        self._calib_status.setText(f"Calibration error: {err}")
+        self._calib_status.setStyleSheet(f"color: {_ERROR}; font-size: 11px;")
+
+    def _apply_suggested_threshold(self) -> None:
+        if self._suggested_threshold is not None:
+            self._config.set("silence_threshold", self._suggested_threshold)
+            self._config.save()
+            self._calib_result.setText(
+                self._calib_result.text()
+                + f"\n→ Applied silence threshold: {self._suggested_threshold:.4f}"
+            )
+            self._btn_apply_thresh.setEnabled(False)
+            self._state.add_diagnostic(
+                "info",
+                f"Silence threshold set to {self._suggested_threshold:.4f} from calibration.",
+            )
+
+    # ── STT test ───────────────────────────────────────────────────────────────
+
+    def _run_stt_test(self) -> None:
+        if self._stt_cb is None:
+            return
+        self._btn_stt.setEnabled(False)
+        self._stt_result.setText("Recording for 5 s — speak now…")
+        self._stt_result.setStyleSheet(f"color: {_WARNING}; font-size: 11px;")
+        mic_idx = self._combo_in.currentData()
+        stt_cb  = self._stt_cb
+
+        def _run() -> None:
+            try:
+                SR   = 16000
+                data = sd.rec(SR * 5, samplerate=SR, channels=1,
+                              dtype="float32", device=mic_idx)
+                sd.wait()
+                audio       = data.flatten()
+                transcript  = stt_cb(audio)
+                nf          = estimate_noise_floor(audio)
+                speech_rms  = estimate_speech_rms(audio, nf)
+                quality, ex = signal_quality_label(nf, speech_rms)
+                self._stt_done.emit(transcript or "(empty)", quality, ex)
+            except Exception as exc:
+                self._stt_error.emit(str(exc))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    @pyqtSlot(str, str, str)
+    def _on_stt_done(self, transcript: str, quality: str, explanation: str) -> None:
+        self._btn_stt.setEnabled(True)
+        q_color = {
+            "good": _SUCCESS, "fair": _WARNING, "poor": _ERROR, "no_signal": _ERROR
+        }.get(quality, _MUTED)
+        self._stt_result.setText(
+            f'Transcript: "{transcript}"\n'
+            f"Quality: {quality.upper()} — {explanation}"
+        )
+        self._stt_result.setStyleSheet(f"color: {q_color}; font-size: 11px;")
+
+    @pyqtSlot(str)
+    def _on_stt_error(self, err: str) -> None:
+        self._btn_stt.setEnabled(True)
+        self._stt_result.setText(f"STT test error: {err}")
+        self._stt_result.setStyleSheet(f"color: {_ERROR}; font-size: 11px;")
 
 
 # ── Tab: Activation ────────────────────────────────────────────────────────────
@@ -1151,7 +1424,8 @@ class ControlCenter(QMainWindow):
     restart_listener_requested = pyqtSignal()
     rerun_validation_requested = pyqtSignal()
 
-    def __init__(self, config: Config, app_state, speaker, parent=None):
+    def __init__(self, config: Config, app_state, speaker,
+                 stt_cb: Callable | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("VOX Control Center")
         self.setMinimumSize(720, 560)
@@ -1168,7 +1442,8 @@ class ControlCenter(QMainWindow):
 
         tabs.addTab(DashboardTab(app_state, config),                              "Dashboard")
         tabs.addTab(AudioTab(config, app_state, speaker,
-                             restart_cb=self.restart_listener_requested.emit),    "Audio")
+                             restart_cb=self.restart_listener_requested.emit,
+                             stt_cb=stt_cb),                                      "Audio")
         tabs.addTab(ActivationTab(config),                                         "Activation")
         tabs.addTab(AssistantTab(config),                                          "Assistant")
         tabs.addTab(ActionsTab(config),                                            "Actions")
