@@ -27,6 +27,7 @@ class Listener(QThread):
     language_detected   = pyqtSignal(str)
     listening_started   = pyqtSignal()
     listening_stopped   = pyqtSignal()
+    mic_level           = pyqtSignal(float)   # 0.0–1.0 normalised RMS
 
     SAMPLE_RATE = 16000
 
@@ -108,6 +109,7 @@ class Listener(QThread):
                 audio = chunk.mean(axis=1) if chunk.ndim > 1 and chunk.shape[1] > 1 else chunk.flatten()
                 rms   = float(np.sqrt(np.mean(audio ** 2)))
                 log.debug(f"[wake] chunk rms={rms:.4f}")
+                self.mic_level.emit(min(1.0, rms / 0.15))
 
                 lang_cfg   = self.config.get("language", "auto")
                 lang_param = None if lang_cfg == "auto" else lang_cfg
@@ -219,6 +221,7 @@ class Listener(QThread):
                     break
 
                 rms = float(np.sqrt(np.mean(data ** 2)))
+                self.mic_level.emit(min(1.0, rms / 0.15))
                 if rms < silence_threshold:
                     consecutive_silent += chunk_size
                     if consecutive_silent >= silence_samples:
@@ -259,6 +262,7 @@ class Listener(QThread):
                 all_chunks.append(data.copy())
                 total_samples += chunk_size
                 rms = float(np.sqrt(np.mean(data ** 2)))
+                self.mic_level.emit(min(1.0, rms / 0.15))
                 if total_samples >= min_samples and rms < silence_threshold:
                     consecutive_silent += chunk_size
                     if consecutive_silent >= silence_samples:

@@ -26,11 +26,17 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 - **Wake word activation** — say "VOX" to activate; no hotkey required
 - **Push-to-talk mode** — optional `Ctrl+Shift` press-to-talk (configurable)
 - **Same-utterance commands** — "vox open spotify" said in one breath is correctly captured
+- **Control Center** — full desktop GUI covering all settings, diagnostics, history, and audio testing
+- **Real mic level meter** — live RMS-based input meter in the overlay and Control Center (not fake animation)
 - **Local LLM** — runs on Ollama (qwen2.5, llama3, mistral, etc.)
 - **Local TTS** — Piper voices, zero latency
-- **Permission system** — the AI can only run actions you explicitly allow in `settings.yaml`
-- **Floating HUD** — minimal overlay, always on top, draggable
-- **Fully configurable** — model, activation mode, language, aliases, allowed actions
+- **Permission system** — editable allowlist of allowed actions, configurable from the GUI
+- **App aliases** — editable spoken-name → executable mapping, configurable from the GUI
+- **Floating HUD overlay** — compact satellite display, always on top, draggable
+- **Session history** — recent interactions visible in the Control Center
+- **Diagnostics panel** — structured in-app log of warnings, errors, and validation results
+- **Mic test and TTS test** — available directly from the Audio tab
+- **Fully configurable from the UI** — no YAML editing needed for normal use
 
 ---
 
@@ -75,16 +81,12 @@ cd vox-local
 pip install -r requirements.txt
 ```
 
-All dependencies (including `comtypes` for Windows audio control) are listed in `requirements.txt`.
-
 ### 3. Pull an Ollama model
 
 ```bash
 ollama pull qwen2.5:7b    # recommended for most systems
 # or
 ollama pull qwen2.5:14b   # higher quality (requires ~9 GB VRAM)
-# or
-ollama pull llama3.1:8b   # alternative
 ```
 
 ### 4. Download Piper + voice model
@@ -112,17 +114,45 @@ python src/main.py
 
 ## Usage
 
+### Interface overview
+
+VOX has two UI surfaces:
+
+| Surface | Role |
+|---------|------|
+| **Control Center** | Full configuration and monitoring window. Open via tray icon or double-click. |
+| **Overlay HUD** | Compact floating status display. Shows real-time state, transcript, and response. |
+
+### Tray icon actions
+
+| Action | How |
+|--------|-----|
+| Open Control Center | Double-click tray icon, or right-click → Control Center |
+| Show Overlay | Right-click → Show Overlay |
+| Open quick settings | Right-click → Settings |
+
+### Voice interaction
+
 | Action | How |
 |--------|-----|
 | Activate (wake word mode) | Say "VOX" — the overlay turns blue and listens |
 | Activate (push-to-talk mode) | Press and hold `Ctrl+Shift`, speak, release |
-| Switch activation mode | Settings → tray icon → Settings |
 | Switch language | Click the `AUTO`/`PT`/`EN` badge in the overlay |
-| Add an app alias | Edit `app_aliases` in `config/settings.yaml` |
-| Block an action | Remove it from `allowed_actions` in `config/settings.yaml` |
 | Move the overlay | Click and drag |
-| Open Settings | Right-click the system tray icon → Settings |
-| Open Audio Settings | Right-click the system tray icon → Audio Settings |
+
+### Control Center tabs
+
+| Tab | What you can do |
+|-----|-----------------|
+| **Dashboard** | See runtime state, dependency health, active config, last interaction |
+| **Audio** | Select mic/output devices, view live mic level, test mic (3 s recording), test TTS |
+| **Activation** | Set activation mode, wake word, PTT key, silence/chunk parameters |
+| **Assistant** | Set Ollama URL, model, history size, language, TTS on/off, voice model |
+| **Actions** | Enable/disable individual actions in the allowlist |
+| **Aliases** | Add, edit, or remove spoken name → app/URI mappings |
+| **Directories** | Manage directories searched by `search_file` |
+| **History** | View recent transcript/response/action entries; clear session history |
+| **Diagnostics** | View structured warning/error log; re-run validation; clear log |
 
 ### Example commands
 
@@ -140,7 +170,7 @@ python src/main.py
 
 ### Language badge
 
-The badge in the lower-right corner shows the **configured** language mode (`AUTO`, `PT`, or `EN`). After each command, it briefly flashes the **detected** transcription language, then restores to the configured mode. Clicking it cycles through the modes and saves the selection immediately.
+The badge in the overlay lower-right corner shows the **configured** language mode (`AUTO`, `PT`, or `EN`). After each command, it briefly flashes the **detected** transcription language, then restores to the configured mode. Clicking it cycles through the modes and saves the selection immediately.
 
 ---
 
@@ -156,6 +186,8 @@ allowed_actions:
   # shell_command  # not in the list = never runs
 ```
 
+The allowlist is fully editable from the **Actions** tab in the Control Center.
+
 ---
 
 ## Architecture
@@ -166,8 +198,11 @@ Microphone
 faster-whisper — Speech-to-Text (wake word detection)
     ↓
 Listener — wake word / push-to-talk activation
+  · emits real RMS mic level → overlay waveform + Control Center meter
     ↓
 faster-whisper — Speech-to-Text (command transcription)
+    ↓
+AppState — central state hub (status, transcript, response, diagnostics, history)
     ↓
 Brain (Ollama API) — LLM reasoning (streamed)
     ↓
@@ -177,53 +212,50 @@ Action runs (open app / set volume / etc.)
     ↓
 Piper TTS — speaks the response
     ↓
-Overlay HUD — shows transcript + response
+Overlay HUD + Control Center — show transcript, response, history, diagnostics
 ```
 
 ---
 
 ## Configuration (`config/settings.yaml`)
 
+**Most settings can be changed from the Control Center** and are saved automatically. Direct YAML editing is only needed for advanced settings not exposed in the UI (`whisper_model`, `whisper_device`, `whisper_compute_type`).
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `activation_mode` | `wake_word` | How VOX is triggered: `wake_word` or `push_to_talk` |
+| `activation_mode` | `wake_word` | `wake_word` or `push_to_talk` |
 | `wake_word` | `vox` | Phrase that activates wake-word mode |
-| `push_to_talk_key` | `ctrl+shift` | Key combo for push-to-talk mode |
+| `push_to_talk_key` | `ctrl+shift` | Key combo for push-to-talk |
 | `language` | `en` | Transcription language (`auto`, `pt`, `en`) |
-| `whisper_model` | `base` | Whisper model size |
-| `whisper_device` | `cpu` | Device for Whisper (`cpu` or `cuda`) |
-| `whisper_compute_type` | `int8` | Compute type for Whisper |
+| `whisper_model` | `base` | Whisper model size (**YAML only — requires restart**) |
+| `whisper_device` | `cpu` | Device for Whisper (`cpu` or `cuda`) (**YAML only — requires restart**) |
+| `whisper_compute_type` | `int8` | Compute type for Whisper (**YAML only — requires restart**) |
 | `ollama_model` | `qwen2.5:14b` | Ollama model to use |
 | `ollama_url` | `http://localhost:11434` | Ollama API base URL |
 | `tts_enabled` | `true` | Enable/disable voice responses |
 | `piper_path` | `piper/piper/piper.exe` | Path to Piper binary (relative to project root) |
-| `voice_model` | `voices/en_US-ryan-high.onnx` | Piper voice (.onnx path, relative to project root) |
+| `voice_model` | `voices/en_US-ryan-high.onnx` | Piper voice (.onnx, relative to project root) |
 | `mic_device` | `null` | Microphone device index (`null` = system default) |
 | `output_device` | `null` | Speaker device index (`null` = system default) |
 | `max_history` | `20` | Max conversation turns kept in memory |
 | `chunk_duration` | `2.0` | Seconds per wake-word detection chunk |
-| `silence_threshold` | `0.01` | RMS below which audio is considered silent |
+| `silence_threshold` | `0.01` | RMS below which audio is silent |
 | `silence_duration` | `1.5` | Seconds of silence that ends a command |
-| `max_record_duration` | `30` | Max seconds to record a single command |
-| `app_aliases` | see file | Map spoken names to executables or URI schemes |
+| `app_aliases` | see file | Map spoken names → executables or URI schemes |
 | `allowed_actions` | see file | Allowlist of executable actions |
-| `search_dirs` | `~/Documents`, `~/Downloads`, `~/Desktop` | Directories searched by `search_file` |
+| `search_dirs` | `~/Documents`, `~/Downloads`, `~/Desktop` | Directories for file search |
 
-### Settings that apply immediately (no restart required)
+### Settings that apply immediately (no restart)
 
-- `language` — picked up on the next recognition cycle
-- `wake_word` — picked up on the next detection chunk
-- `tts_enabled`, `voice_model`, `piper_path` — picked up on the next TTS call
-- `ollama_model` — picked up on the next LLM request
+- `language`, `wake_word` — next recognition cycle
+- `tts_enabled`, `voice_model`, `piper_path` — next TTS call
+- `ollama_model`, `ollama_url` — next LLM request
+- `activation_mode`, `push_to_talk_key` — next listener iteration
+- Audio devices — output: immediate; microphone: listener restarts automatically
 
 ### Settings that require restarting VOX
 
-- `activation_mode` — determines which listening loop runs
 - `whisper_model`, `whisper_device`, `whisper_compute_type` — Whisper is loaded once at startup
-
-### Audio device settings
-
-Changing the **output device** via Audio Settings takes effect immediately for the next TTS call. Changing the **input (microphone) device** automatically restarts the listener thread — a brief notice appears in the overlay footer.
 
 ---
 
@@ -233,51 +265,54 @@ Changing the **output device** via Audio Settings takes effect immediately for t
 ```
 Ollama is not reachable. Start it with: ollama serve
 ```
-Start Ollama with:
+Start Ollama:
 ```bash
 ollama serve
 ```
+Check the **Diagnostics** tab in the Control Center for details.
 
 **CUDA not available**
-VOX falls back to CPU automatically. To force CPU explicitly:
+VOX falls back to CPU automatically. To force CPU explicitly in `settings.yaml`:
 ```yaml
 whisper_device: cpu
 whisper_compute_type: int8
 ```
 
 **Piper not found**
-```
-[Speaker] Piper not found. Check piper_path in settings.yaml
-```
-Check that `piper_path` in `config/settings.yaml` points to the correct binary. Default: `piper/piper/piper.exe` (relative to project root).
+Check that `piper_path` in the **Assistant** tab (or `config/settings.yaml`) points to the correct binary. Default: `piper/piper/piper.exe` (relative to project root).
 
 **No audio input / microphone not detected**
 - Check microphone permissions in your OS settings
-- Run VOX and check the console — it lists all detected devices with their indices
-- Set `mic_device: <index>` in `settings.yaml` to use a specific device
-- Or use **Audio Settings** from the tray icon to select a microphone
+- Open the **Audio** tab in the Control Center and use **Test Microphone** to verify the device
+- Select a specific device from the Input dropdown and save
+- Run a validation from **Diagnostics** → **Re-run Validation**
+
+**Mic level meter shows nothing**
+The real-time meter is driven by actual RMS from the microphone. If it never moves:
+- Check that the correct input device is selected in Audio settings
+- Use **Test Microphone** to record 3 seconds and check the peak reading
 
 **VOX says "vox open spotify" instead of "open spotify"**
-This is handled automatically — the listener strips any leading wake-word echo from the transcription. If it happens unexpectedly, lower `silence_threshold` so the command phase starts capturing sooner.
+This is handled automatically — the listener strips any leading wake-word echo. If it persists, lower `silence_threshold` so command capture starts sooner.
 
 **Media keys not working on Linux**
-Install `playerctl`:
 ```bash
 sudo apt install playerctl   # Debian/Ubuntu
 sudo pacman -S playerctl      # Arch
 ```
 
-**search_file doesn't find my files**
-Check that `search_dirs` in `config/settings.yaml` lists the correct directories. Paths with `~` are expanded automatically (e.g. `~/Documents` → `/home/user/Documents`).
+**search_file doesn't find files**
+Check the **Directories** tab in the Control Center — verify the correct directories are listed.
 
 ---
 
 ## Known Limitations
 
 - **Push-to-talk on Linux** requires the `keyboard` package to have root privileges (or `uinput` access). Wake word mode is recommended on Linux.
-- **open_app on Linux** for plain executable names uses the PATH directly. Apps not in PATH must be aliased with their full path in `app_aliases`.
-- **TTS interruption** is not implemented within a single response — Piper generates the full audio before playback begins.
-- **Barge-in** (speaking while VOX is responding) cancels the LLM generation but the in-flight TTS audio plays to completion.
+- **open_app on Linux** for plain executable names uses PATH directly. Apps not in PATH must be aliased with their full path in the **Aliases** tab.
+- **TTS interruption** is not implemented within a single response — Piper generates full audio before playback begins.
+- **Barge-in** (speaking while VOX is responding) cancels LLM generation but the in-flight TTS audio plays to completion.
+- **Whisper settings** (`whisper_model`, `whisper_device`, `whisper_compute_type`) are not exposed in the Control Center UI — they require a YAML edit and application restart.
 
 ---
 
@@ -290,9 +325,16 @@ Check that `search_dirs` in `config/settings.yaml` lists the correct directories
 - [x] Same-utterance wake-word + command capture
 - [x] Listener restart on microphone change
 - [x] Truthful Linux platform behavior
+- [x] Control Center with all settings accessible from UI
+- [x] Real RMS-based mic level meter (overlay + Control Center)
+- [x] Session history visible in UI
+- [x] Structured diagnostics panel
+- [x] Mic test and TTS test from UI
+- [x] Allowlist and app aliases editable from UI
+- [x] Central AppState model
 - [ ] TTS barge-in / cancellation
 - [ ] Custom action plugins
-- [ ] Conversation memory persistence
+- [ ] Conversation memory persistence across restarts
 - [ ] Linux audio (PipeWire) full integration
 
 ---

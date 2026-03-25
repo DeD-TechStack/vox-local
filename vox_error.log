@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "c:\Users\danie\projetos\vox.python\vox-local\src\main.py", line 365, in <module>
+    run_app(config, whisper_model)
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\danie\projetos\vox.python\vox-local\src\main.py", line 103, in run_app
+    from ui.overlay import OverlayWindow
+  File "c:\Users\danie\projetos\vox.python\vox-local\src\ui\overlay.py", line 5, in <module>
+    from ui.mic_meter import MicLevelWaveform
+  File "c:\Users\danie\projetos\vox.python\vox-local\src\ui\mic_meter.py", line 12, in <module>
+    from PyQt6.QtGui import QColor, QPainter, QRectF
+ImportError: cannot import name 'QRectF' from 'PyQt6.QtGui' (C:\Users\danie\AppData\Local\Programs\Python\Python313\Lib\site-packages\PyQt6\QtGui.pyd)

@@ -61,8 +61,13 @@ def _pyqtSlot(*args, **kwargs):
         return fn
     return _decorator
 
+_QObject_stub = type("QObject", (), {
+    "__init__": lambda self, parent=None: None,
+})
+
 _qt_core_stub = _stub(
     "PyQt6.QtCore",
+    QObject=_QObject_stub,
     QThread=_QThread_stub,
     pyqtSignal=_pyqtSignal,
     pyqtSlot=_pyqtSlot,

@@ -1,8 +1,8 @@
-import random
-
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame
-from PyQt6.QtCore import Qt, QTimer, QRectF, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QColor, QPainter, QGuiApplication
+
+from ui.mic_meter import MicLevelWaveform
 
 
 # ─── Stylesheet constants ──────────────────────────────────────────────────────
@@ -31,58 +31,6 @@ _BADGE_SS = (
 W, H = 400, 265
 
 
-# ─── Waveform ─────────────────────────────────────────────────────────────────
-
-class WaveformWidget(QWidget):
-    BAR_COUNT   = 10
-    BAR_W       = 3
-    BAR_GAP     = 4
-    BAR_MIN     = 4
-    BAR_MAX     = 24
-    CONTAINER_H = 28
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        total_w = self.BAR_COUNT * self.BAR_W + (self.BAR_COUNT - 1) * self.BAR_GAP
-        self.setFixedSize(total_w, self.CONTAINER_H)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self._bars   = [float(self.BAR_MIN)] * self.BAR_COUNT
-        self._active = False
-        self._timer  = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-
-    def set_active(self, active: bool):
-        self._active = active
-        if active:
-            self._timer.start(80)
-        else:
-            self._timer.stop()
-            self._bars = [float(self.BAR_MIN)] * self.BAR_COUNT
-            self.update()
-
-    def _tick(self):
-        for i in range(self.BAR_COUNT):
-            target = random.randint(self.BAR_MIN, self.BAR_MAX)
-            self._bars[i] = self._bars[i] * 0.4 + target * 0.6
-        self.update()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        cy = self.height() / 2
-        n  = self.BAR_COUNT
-        for i, h in enumerate(self._bars):
-            h = min(h, self.BAR_MAX)
-            x = i * (self.BAR_W + self.BAR_GAP)
-            y = cy - h / 2
-            edge  = 1.0 - abs(i - (n - 1) / 2) / ((n - 1) / 2)
-            alpha = int(70 + 160 * edge)
-            p.setBrush(QColor(168, 85, 247, alpha))
-            p.drawRoundedRect(QRectF(x, y, self.BAR_W, h), 1.5, 1.5)
-        p.end()
-
-
 # ─── Clickable label ──────────────────────────────────────────────────────────
 
 class ClickableLabel(QLabel):
@@ -99,15 +47,26 @@ class ClickableLabel(QLabel):
 class OverlayWindow(QWidget):
     language_clicked = pyqtSignal()
 
+    # Human-readable status labels and their colours
+    _STATUS_MAP = {
+        "idle":         ("idle",          "#444444"),
+        "listening":    ("listening",     "#2A6FF5"),
+        "transcribing": ("transcribing",  "#F59E0B"),
+        "generating":   ("generating",    "#A855F7"),
+        "responding":   ("responding",    "#A855F7"),
+        "speaking":     ("speaking",      "#A855F7"),
+        "error":        ("error",         "#EF4444"),
+        "cancelled":    ("cancelled",     "#EF4444"),
+        "done":         ("done",          "#1D9E75"),
+    }
+
     def __init__(self):
         super().__init__()
         self._state          = "idle"
         self._pulse_on       = True
         self._pulse_color    = "#444444"
         self._pulse_dim      = "rgba(68,68,68,0.2)"
-        self._footer_default = "Diga VOX para ativar"
-        # Tracks the configured language mode so the badge can be restored
-        # after a transient detected-language display.
+        self._footer_default = "Say VOX to activate"
         self._lang_mode_text = "AUTO"
 
         self._setup_window()
@@ -158,12 +117,12 @@ class OverlayWindow(QWidget):
         # Ollama status dot
         self._ollama_dot = QLabel("●")
         self._ollama_dot.setStyleSheet(f"color: #333333; font-size: 7px; {_BG}")
-        self._ollama_dot.setToolTip("Verificando Ollama…")
+        self._ollama_dot.setToolTip("Checking Ollama…")
 
         self._dot = QLabel("●")
         self._dot.setStyleSheet(f"color: #444444; font-size: 8px; {_BG}")
 
-        self._status_lbl = QLabel("inativo")
+        self._status_lbl = QLabel("idle")
         self._status_lbl.setStyleSheet(f"color: #444444; font-size: 11px; {_BG}")
 
         status_row = QHBoxLayout()
@@ -189,10 +148,10 @@ class OverlayWindow(QWidget):
 
         root.addSpacing(8)
 
-        # ── Waveform ──────────────────────────────────────────
+        # ── Waveform (real mic level) ────────────────────────
         wave_row = QHBoxLayout()
         wave_row.setSpacing(0)
-        self._waveform = WaveformWidget()
+        self._waveform = MicLevelWaveform()
         wave_row.addStretch()
         wave_row.addWidget(self._waveform)
         wave_row.addStretch()
@@ -201,7 +160,7 @@ class OverlayWindow(QWidget):
         root.addSpacing(10)
 
         # ── Transcript section ───────────────────────────────
-        self._lbl_you = QLabel("VOCÊ")
+        self._lbl_you = QLabel("YOU")
         self._lbl_you.setStyleSheet(_MUTED_LABEL)
         root.addWidget(self._lbl_you)
 
@@ -252,7 +211,7 @@ class OverlayWindow(QWidget):
         self._lang_badge = ClickableLabel("AUTO")
         self._lang_badge.setStyleSheet(_BADGE_SS)
         self._lang_badge.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._lang_badge.setToolTip("Clique para alternar idioma: AUTO → PT → EN")
+        self._lang_badge.setToolTip("Click to cycle language: AUTO → PT → EN")
         self._lang_badge.clicked.connect(self.language_clicked)
 
         footer_row.addWidget(self._footer)
@@ -284,30 +243,33 @@ class OverlayWindow(QWidget):
     def _apply_dot(self, color: str):
         self._dot.setStyleSheet(f"color: {color}; font-size: 8px; {_BG}")
 
+    # ── Mic level ─────────────────────────────────────────────────────────────
+
+    @pyqtSlot(float)
+    def set_mic_level(self, level: float):
+        """Feed real RMS level (0.0–1.0) to the waveform widget."""
+        self._waveform.set_level(level)
+
     # ── State slots ───────────────────────────────────────────────────────────
 
     @pyqtSlot(str)
     def set_footer_mode(self, mode: str):
-        """Update footer hint text based on activation mode."""
         if mode == "push_to_talk":
-            key = "Ctrl+Shift"
-            self._footer_default = f"Pressione {key} para ativar"
+            self._footer_default = "Press Ctrl+Shift to activate"
         else:
-            self._footer_default = "Diga VOX para ativar"
+            self._footer_default = "Say VOX to activate"
         self._footer.setText(self._footer_default)
 
     @pyqtSlot(str)
     def set_footer_mode_with_key(self, mode: str, key: str):
-        """Update footer hint text with a specific push-to-talk key label."""
         if mode == "push_to_talk":
-            self._footer_default = f"Pressione {key.upper()} para ativar"
+            self._footer_default = f"Press {key.upper()} to activate"
         else:
-            self._footer_default = "Diga VOX para ativar"
+            self._footer_default = "Say VOX to activate"
         self._footer.setText(self._footer_default)
 
     @pyqtSlot(str)
     def show_info_notice(self, message: str, duration_ms: int = 4000):
-        """Temporarily show an informational notice in the footer area."""
         self._footer.setText(message)
         self._footer.setVisible(True)
         self._footer.setStyleSheet(f"color: #F59E0B; font-size: 10px; {_BG}")
@@ -319,9 +281,8 @@ class OverlayWindow(QWidget):
 
     @pyqtSlot()
     def set_cancelled(self):
-        """Briefly show 'cancelado' then return to idle."""
         self._state = "idle"
-        self._set_status("cancelado", "#EF4444")
+        self._set_status("cancelled", "#EF4444")
         self._waveform.set_active(False)
         self._response.setText("")
         self._footer.setVisible(False)
@@ -330,7 +291,7 @@ class OverlayWindow(QWidget):
     @pyqtSlot()
     def set_idle(self):
         self._state = "idle"
-        self._set_status("inativo", "#444444")
+        self._set_status("idle", "#444444")
         self._waveform.set_active(False)
         self._footer.setText(self._footer_default)
         self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
@@ -340,7 +301,7 @@ class OverlayWindow(QWidget):
     @pyqtSlot()
     def set_listening(self):
         self._state = "listening"
-        self._set_status("ouvindo", "#2A6FF5", pulse=True, dim="rgba(42,111,245,0.25)")
+        self._set_status("listening", "#2A6FF5", pulse=True, dim="rgba(42,111,245,0.25)")
         self._transcript.setText("…")
         self._transcript.setStyleSheet(
             f"color: rgba(255,255,255,0.45); font-size: 13px; {_BG}"
@@ -354,8 +315,9 @@ class OverlayWindow(QWidget):
 
     @pyqtSlot()
     def set_processing(self):
-        self._state = "processing"
-        self._set_status("pensando…", "#F59E0B")
+        """Listening stopped — transcribing audio."""
+        self._state = "transcribing"
+        self._set_status("transcribing…", "#F59E0B")
         self._waveform.set_active(False)
         self._response.setText("")
         self._response.setStyleSheet(f"color: #A855F7; font-size: 13px; {_BG}")
@@ -364,7 +326,7 @@ class OverlayWindow(QWidget):
     @pyqtSlot()
     def set_generating(self):
         self._state = "generating"
-        self._set_status("gerando", "#A855F7")
+        self._set_status("generating", "#A855F7")
 
     @pyqtSlot(str)
     def set_transcript(self, text: str):
@@ -377,7 +339,7 @@ class OverlayWindow(QWidget):
     def append_token(self, token: str):
         if self._state != "responding":
             self._state = "responding"
-            self._set_status("respondendo", "#A855F7")
+            self._set_status("responding", "#A855F7")
             self._footer.setVisible(False)
         self._response.setText(self._response.text() + token)
 
@@ -386,7 +348,7 @@ class OverlayWindow(QWidget):
         self._state = "responding"
         self._response.setText(text)
         self._response.setStyleSheet(f"color: #A855F7; font-size: 13px; {_BG}")
-        self._set_status("respondendo", "#A855F7")
+        self._set_status("responding", "#A855F7")
         self._footer.setVisible(False)
 
     @pyqtSlot(str)
@@ -394,23 +356,18 @@ class OverlayWindow(QWidget):
         self._state = "responding"
         self._response.setText(text)
         self._response.setStyleSheet(f"color: #1D9E75; font-size: 13px; {_BG}")
-        self._set_status("pronto", "#1D9E75")
+        self._set_status("done", "#1D9E75")
         self._footer.setVisible(False)
 
     @pyqtSlot(bool)
     def set_ollama_ok(self, ok: bool):
         color   = "#1D9E75" if ok else "#EF4444"
-        tooltip = "Ollama conectado" if ok else "Ollama desconectado"
+        tooltip = "Ollama connected" if ok else "Ollama disconnected"
         self._ollama_dot.setStyleSheet(f"color: {color}; font-size: 7px; {_BG}")
         self._ollama_dot.setToolTip(tooltip)
 
     @pyqtSlot(str)
     def set_language_mode(self, mode: str):
-        """Update the badge to reflect the configured language mode.
-
-        This is the authoritative label.  It is stored so the badge can be
-        restored after a transient detected-language display.
-        """
         labels = {"auto": "AUTO", "pt": "PT", "en": "EN"}
         text = labels.get(mode, mode.upper()[:4])
         self._lang_mode_text = text
@@ -418,18 +375,12 @@ class OverlayWindow(QWidget):
 
     @pyqtSlot(str)
     def show_detected_language(self, lang: str):
-        """Transiently highlight the badge with the detected language.
-
-        The badge is restored to the configured language mode after 3 seconds
-        so the user's selected mode never appears to have changed on its own.
-        """
         labels = {"pt": "PT", "en": "EN", "portuguese": "PT", "english": "EN"}
         display = labels.get(lang.lower(), lang.upper()[:2])
         self._lang_badge.setText(display)
         QTimer.singleShot(3000, self._restore_language_badge)
 
     def _restore_language_badge(self):
-        """Restore badge to the currently configured language mode."""
         self._lang_badge.setText(self._lang_mode_text)
 
     def _auto_hide(self):
