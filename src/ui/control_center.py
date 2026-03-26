@@ -42,15 +42,19 @@ from ui.mic_meter import MicLevelBar
 
 
 # ── Colour tokens ──────────────────────────────────────────────────────────────
-_BG      = "#0e0c14"
-_PANEL   = "#16131f"
-_BORDER  = "#2a2338"
+_BG      = "#080611"
+_PANEL   = "#0d0b18"
+_CARD    = "#131020"
+_BORDER  = "#252038"
+_BORDER2 = "#3d3860"
 _ACCENT  = "#a855f7"
-_TEXT    = "#e2e0ea"
-_MUTED   = "#6b6680"
-_SUCCESS = "#1d9e75"
+_TEXT    = "#ebe9f4"
+_TEXT2   = "#b0abc8"
+_MUTED   = "#635e7a"
+_SUCCESS = "#22c55e"
 _WARNING = "#f59e0b"
-_ERROR   = "#ef4444"
+_ERROR   = "#f87171"
+_INFO    = "#38bdf8"
 
 # All known executor actions with description and risk label
 _ALL_ACTIONS = [
@@ -70,80 +74,99 @@ _ALL_ACTIONS = [
 ]
 
 _CC_STYLE = f"""
-QMainWindow, QWidget {{ background: {_BG}; color: {_TEXT}; font-size: 13px; }}
+QMainWindow, QWidget {{
+    background: {_BG}; color: {_TEXT}; font-size: 13px;
+}}
 QTabWidget::pane {{
     border: 1px solid {_BORDER}; background: {_PANEL};
-    border-top-right-radius: 6px; border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
+    border-top-right-radius: 8px; border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
 }}
 QTabBar::tab {{
-    background: {_BG}; color: {_MUTED}; padding: 8px 18px;
+    background: {_BG}; color: {_MUTED}; padding: 9px 20px;
     border: none; border-bottom: 2px solid transparent; font-size: 12px;
+    letter-spacing: 0.3px;
 }}
-QTabBar::tab:selected {{ color: {_ACCENT}; border-bottom: 2px solid {_ACCENT}; }}
-QTabBar::tab:hover {{ color: {_TEXT}; }}
+QTabBar::tab:selected {{ color: {_ACCENT}; border-bottom: 2px solid {_ACCENT}; font-weight: 500; }}
+QTabBar::tab:hover:!selected {{ color: {_TEXT2}; border-bottom: 2px solid {_BORDER2}; }}
 QPushButton {{
-    background: rgba(168,85,247,0.13); border: 1px solid rgba(168,85,247,0.28);
-    border-radius: 5px; color: {_TEXT}; padding: 5px 14px; font-size: 12px;
+    background: rgba(168,85,247,0.10); border: 1px solid rgba(168,85,247,0.25);
+    border-radius: 6px; color: {_TEXT}; padding: 6px 16px; font-size: 12px;
 }}
-QPushButton:hover {{ background: rgba(168,85,247,0.22); }}
-QPushButton:pressed {{ background: rgba(168,85,247,0.34); }}
+QPushButton:hover {{ background: rgba(168,85,247,0.20); border-color: rgba(168,85,247,0.45); }}
+QPushButton:pressed {{ background: rgba(168,85,247,0.32); }}
+QPushButton:disabled {{ background: rgba(255,255,255,0.03); border-color: {_BORDER}; color: {_MUTED}; }}
 QPushButton#danger {{
-    background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.28);
+    background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.25);
 }}
-QPushButton#danger:hover {{ background: rgba(239,68,68,0.22); }}
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit {{
+QPushButton#danger:hover {{ background: rgba(248,113,113,0.20); border-color: rgba(248,113,113,0.45); }}
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
     background: rgba(255,255,255,0.04); border: 1px solid {_BORDER};
-    border-radius: 4px; color: {_TEXT}; padding: 4px 8px; font-size: 12px;
+    border-radius: 5px; color: {_TEXT}; padding: 5px 9px; font-size: 12px;
+}}
+QTextEdit {{
+    background: rgba(0,0,0,0.25); border: 1px solid {_BORDER};
+    border-radius: 5px; color: {_TEXT2}; padding: 6px 8px; font-size: 12px;
+    selection-background-color: rgba(168,85,247,0.30);
 }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-    border-color: rgba(168,85,247,0.5);
+    border-color: rgba(168,85,247,0.55); background: rgba(168,85,247,0.05);
 }}
-QComboBox::drop-down {{ border: none; }}
+QComboBox::drop-down {{ border: none; padding-right: 6px; }}
 QCheckBox {{ color: {_TEXT}; font-size: 12px; spacing: 8px; }}
 QCheckBox::indicator {{
-    width: 14px; height: 14px;
-    border: 1px solid {_BORDER}; border-radius: 3px;
+    width: 15px; height: 15px;
+    border: 1px solid {_BORDER2}; border-radius: 4px;
     background: rgba(255,255,255,0.04);
 }}
-QCheckBox::indicator:checked {{ background: {_ACCENT}; border-color: {_ACCENT}; }}
+QCheckBox::indicator:checked {{
+    background: {_ACCENT}; border-color: {_ACCENT};
+    image: none;
+}}
+QCheckBox::indicator:hover {{ border-color: rgba(168,85,247,0.6); }}
 QRadioButton {{ color: {_TEXT}; font-size: 12px; spacing: 8px; }}
 QRadioButton::indicator {{
-    width: 13px; height: 13px;
-    border: 1px solid {_BORDER}; border-radius: 7px;
+    width: 14px; height: 14px;
+    border: 1px solid {_BORDER2}; border-radius: 7px;
     background: rgba(255,255,255,0.04);
 }}
 QRadioButton::indicator:checked {{ background: {_ACCENT}; border-color: {_ACCENT}; }}
+QRadioButton::indicator:hover {{ border-color: rgba(168,85,247,0.6); }}
 QGroupBox {{
-    border: 1px solid {_BORDER}; border-radius: 5px;
-    margin-top: 14px; padding: 10px 10px 6px 10px;
-    color: {_MUTED}; font-size: 11px; letter-spacing: 0.8px;
+    background: rgba(255,255,255,0.015);
+    border: 1px solid {_BORDER}; border-radius: 8px;
+    margin-top: 16px; padding: 12px 12px 8px 12px;
+    color: {_MUTED}; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin; subcontrol-position: top left;
-    padding: 0 6px; left: 10px;
+    padding: 0 8px; left: 12px; top: 2px;
 }}
 QListWidget, QTableWidget {{
-    background: rgba(255,255,255,0.03); border: 1px solid {_BORDER};
-    border-radius: 4px; color: {_TEXT}; font-size: 12px;
+    background: rgba(0,0,0,0.2); border: 1px solid {_BORDER};
+    border-radius: 6px; color: {_TEXT}; font-size: 12px;
     outline: none;
 }}
+QListWidget::item {{ padding: 4px 8px; border-radius: 4px; }}
 QListWidget::item:selected, QTableWidget::item:selected {{
-    background: rgba(168,85,247,0.18); color: {_TEXT};
+    background: rgba(168,85,247,0.20); color: {_TEXT};
 }}
+QListWidget::item:hover {{ background: rgba(255,255,255,0.04); }}
 QTableWidget {{ gridline-color: {_BORDER}; }}
 QHeaderView::section {{
-    background: rgba(255,255,255,0.04); color: {_MUTED};
+    background: rgba(255,255,255,0.03); color: {_MUTED};
     border: none; border-right: 1px solid {_BORDER};
-    padding: 5px 8px; font-size: 11px; letter-spacing: 0.5px;
+    padding: 5px 10px; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
 }}
 QScrollBar:vertical {{
-    background: transparent; width: 6px; margin: 0;
+    background: transparent; width: 5px; margin: 0;
 }}
 QScrollBar::handle:vertical {{
-    background: {_BORDER}; border-radius: 3px; min-height: 20px;
+    background: {_BORDER2}; border-radius: 3px; min-height: 24px;
 }}
+QScrollBar::handle:vertical:hover {{ background: {_MUTED}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollArea {{ border: none; background: transparent; }}
 """
 
 
@@ -158,14 +181,36 @@ def _sep() -> QFrame:
 
 def _section(text: str) -> QLabel:
     lbl = QLabel(text.upper())
-    lbl.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 1px;")
+    lbl.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 1.2px; font-weight: 500;")
     return lbl
 
 
 def _note(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setWordWrap(True)
-    lbl.setStyleSheet(f"color: {_MUTED}; font-size: 11px;")
+    lbl.setStyleSheet(f"color: {_MUTED}; font-size: 11px; line-height: 1.4;")
+    return lbl
+
+
+def _apply_tag(text: str, color: str | None = None) -> QLabel:
+    """Small inline badge showing when a setting takes effect."""
+    c = color or _INFO
+    lbl = QLabel(text)
+    lbl.setStyleSheet(
+        f"color: {c}; font-size: 10px; letter-spacing: 0.3px; "
+        f"border-left: 2px solid {c}; padding-left: 6px; margin-top: 2px;"
+        f"background: transparent;"
+    )
+    return lbl
+
+
+def _status_chip(text: str, color: str) -> QLabel:
+    """A small pill-shaped status badge."""
+    lbl = QLabel(text)
+    lbl.setStyleSheet(
+        f"color: {color}; background: transparent; font-size: 11px; "
+        f"font-weight: 500; letter-spacing: 0.3px;"
+    )
     return lbl
 
 
@@ -175,14 +220,17 @@ class _SettingsPanel(QWidget):
         self._config = config
 
     def _show_saved(self, lbl: QLabel, ok: bool = True, msg: str = "") -> None:
-        lbl.setText(msg or ("Saved." if ok else "Error."))
-        lbl.setStyleSheet(f"color: {_SUCCESS if ok else _ERROR}; font-size: 11px;")
+        text = msg or ("Saved." if ok else "Error.")
+        color = _SUCCESS if ok else _ERROR
+        lbl.setText(text)
+        lbl.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 500;")
         QTimer.singleShot(3000, lambda: lbl.setText(""))
 
     def _save_row(self) -> tuple[QHBoxLayout, QLabel, QPushButton]:
         row = QHBoxLayout()
         status = QLabel("")
-        btn = QPushButton("Save")
+        btn = QPushButton("Save Changes")
+        btn.setMinimumWidth(120)
         row.addStretch()
         row.addWidget(status)
         row.addWidget(btn)
@@ -200,40 +248,84 @@ class DashboardTab(QWidget):
         self._connect()
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        inner = QWidget()
+        scroll.setWidget(inner)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        root = QVBoxLayout(inner)
         root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(14)
+        root.setSpacing(16)
 
-        # Status group
-        grp_status = QGroupBox("Runtime")
-        g1 = QGridLayout(grp_status)
-        g1.setColumnMinimumWidth(0, 140)
-        g1.setHorizontalSpacing(20)
-        g1.setVerticalSpacing(6)
+        # ── Status row at top ─────────────────────────────────────────────────
+        status_card = QFrame()
+        status_card.setObjectName("status_card")
+        status_card.setStyleSheet(
+            f"QFrame#status_card {{ "
+            f"background: rgba(168,85,247,0.07); "
+            f"border: 1px solid rgba(168,85,247,0.20); "
+            f"border-radius: 10px; padding: 12px 16px; }}"
+        )
+        sc_layout = QHBoxLayout(status_card)
+        sc_layout.setContentsMargins(16, 12, 16, 12)
+        sc_layout.setSpacing(12)
 
-        self._lbl_status = QLabel("–")
+        self._dot_big = QLabel("●")
+        self._dot_big.setStyleSheet(f"color: {_MUTED}; font-size: 14px; background: transparent; border: none;")
+        self._lbl_status = QLabel("Idle")
+        self._lbl_status.setStyleSheet(f"color: {_TEXT}; font-size: 16px; font-weight: 600; background: transparent; border: none;")
+        sc_layout.addWidget(self._dot_big)
+        sc_layout.addWidget(self._lbl_status)
+        sc_layout.addStretch()
+
+        # Ollama health indicator
+        ollama_col = QVBoxLayout()
+        ollama_col.setSpacing(2)
+        self._lbl_ollama_hdr = QLabel("LLM")
+        self._lbl_ollama_hdr.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 0.8px; background: transparent; border: none;")
         self._lbl_ollama = QLabel("–")
-        self._lbl_piper  = QLabel("–")
-        self._lbl_voice  = QLabel("–")
+        self._lbl_ollama.setStyleSheet(f"color: {_TEXT}; font-size: 12px; background: transparent; border: none;")
+        ollama_col.addWidget(self._lbl_ollama_hdr)
+        ollama_col.addWidget(self._lbl_ollama)
 
-        for row, (label, widget) in enumerate([
-            ("State",       self._lbl_status),
-            ("Ollama",      self._lbl_ollama),
-            ("Piper TTS",   self._lbl_piper),
-            ("Voice Model", self._lbl_voice),
-        ]):
-            g1.addWidget(_section(label), row, 0)
-            g1.addWidget(widget, row, 1)
+        piper_col = QVBoxLayout()
+        piper_col.setSpacing(2)
+        self._lbl_piper_hdr = QLabel("TTS")
+        self._lbl_piper_hdr.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 0.8px; background: transparent; border: none;")
+        self._lbl_piper = QLabel("–")
+        self._lbl_piper.setStyleSheet(f"color: {_TEXT}; font-size: 12px; background: transparent; border: none;")
+        piper_col.addWidget(self._lbl_piper_hdr)
+        piper_col.addWidget(self._lbl_piper)
 
-        root.addWidget(grp_status)
+        voice_col = QVBoxLayout()
+        voice_col.setSpacing(2)
+        self._lbl_voice_hdr = QLabel("VOICE")
+        self._lbl_voice_hdr.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 0.8px; background: transparent; border: none;")
+        self._lbl_voice = QLabel("–")
+        self._lbl_voice.setStyleSheet(f"color: {_TEXT}; font-size: 12px; background: transparent; border: none;")
+        voice_col.addWidget(self._lbl_voice_hdr)
+        voice_col.addWidget(self._lbl_voice)
 
-        # Config group
+        for col in (ollama_col, piper_col, voice_col):
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.VLine)
+            sep.setStyleSheet(f"background: rgba(168,85,247,0.20); border: none; max-width: 1px;")
+            sc_layout.addWidget(sep)
+            sc_layout.addLayout(col)
+
+        root.addWidget(status_card)
+
+        # ── Active Configuration ──────────────────────────────────────────────
         grp_cfg = QGroupBox("Active Configuration")
-        g2 = QGridLayout(grp_cfg)
-        g2.setColumnMinimumWidth(0, 140)
-        g2.setHorizontalSpacing(20)
-        g2.setVerticalSpacing(6)
-        g2.setColumnStretch(1, 1)
+        g = QGridLayout(grp_cfg)
+        g.setColumnMinimumWidth(0, 130)
+        g.setHorizontalSpacing(16)
+        g.setVerticalSpacing(8)
+        g.setColumnStretch(1, 1)
 
         self._lbl_model    = QLabel("–")
         self._lbl_language = QLabel("–")
@@ -248,17 +340,17 @@ class DashboardTab(QWidget):
             ("Microphone",  self._lbl_mic),
             ("Output",      self._lbl_out),
         ]):
-            g2.addWidget(_section(label), row, 0)
-            g2.addWidget(widget, row, 1)
+            g.addWidget(_section(label), row, 0, Qt.AlignmentFlag.AlignTop)
+            g.addWidget(widget, row, 1)
 
         root.addWidget(grp_cfg)
 
-        # Session group
+        # ── Last Interaction ──────────────────────────────────────────────────
         grp_sess = QGroupBox("Last Interaction")
         g3 = QGridLayout(grp_sess)
-        g3.setColumnMinimumWidth(0, 140)
-        g3.setHorizontalSpacing(20)
-        g3.setVerticalSpacing(6)
+        g3.setColumnMinimumWidth(0, 130)
+        g3.setHorizontalSpacing(16)
+        g3.setVerticalSpacing(8)
         g3.setColumnStretch(1, 1)
 
         self._lbl_cmd    = QLabel("–")
@@ -266,6 +358,7 @@ class DashboardTab(QWidget):
         self._lbl_action = QLabel("–")
         for w in (self._lbl_cmd, self._lbl_resp, self._lbl_action):
             w.setWordWrap(True)
+            w.setStyleSheet(f"color: {_TEXT2}; font-size: 12px;")
 
         for row, (label, widget) in enumerate([
             ("Command",  self._lbl_cmd),
@@ -298,10 +391,10 @@ class DashboardTab(QWidget):
         voice_raw = c.get("voice_model", "")
         voice_ok  = os.path.exists(_resolve(project_root, voice_raw))
 
-        self._lbl_piper.setText("Found" if piper_ok else "Not found")
-        self._lbl_piper.setStyleSheet(f"color: {_SUCCESS if piper_ok else _ERROR};")
-        self._lbl_voice.setText("Found" if voice_ok else "Not found")
-        self._lbl_voice.setStyleSheet(f"color: {_SUCCESS if voice_ok else _ERROR};")
+        self._lbl_piper.setText("● Found" if piper_ok else "● Not found")
+        self._lbl_piper.setStyleSheet(f"color: {_SUCCESS if piper_ok else _ERROR}; font-size: 12px; background: transparent; border: none;")
+        self._lbl_voice.setText("● Found" if voice_ok else "● Not found")
+        self._lbl_voice.setStyleSheet(f"color: {_SUCCESS if voice_ok else _ERROR}; font-size: 12px; background: transparent; border: none;")
 
         self._lbl_model.setText(c.get("ollama_model", "–"))
         self._lbl_language.setText(c.get("language", "auto").upper())
@@ -329,29 +422,31 @@ class DashboardTab(QWidget):
         self._lbl_mic.setText(mic_name)
         self._lbl_out.setText(out_name)
 
-        # Reflect current ollama status
         self._on_ollama(self._state.ollama_ok)
+        self._on_status(self._state.status)
 
     @pyqtSlot(str)
     def _on_status(self, status: str) -> None:
         _map = {
-            "idle":         ("Idle",         _MUTED),
-            "monitoring":   ("Monitoring",   "#1D9E75"),
-            "listening":    ("Listening",     "#2A6FF5"),
-            "transcribing": ("Transcribing",  _WARNING),
-            "generating":   ("Generating",    _ACCENT),
-            "responding":   ("Responding",    _ACCENT),
-            "speaking":     ("Speaking",      _SUCCESS),
-            "error":        ("Error",         _ERROR),
+            "idle":         ("Idle",         _MUTED,   "●"),
+            "monitoring":   ("Monitoring",   _SUCCESS, "●"),
+            "listening":    ("Listening",    "#2A6FF5","●"),
+            "transcribing": ("Transcribing", _WARNING, "●"),
+            "generating":   ("Generating",   _ACCENT,  "●"),
+            "responding":   ("Responding",   _ACCENT,  "●"),
+            "speaking":     ("Speaking",     _SUCCESS, "●"),
+            "error":        ("Error",        _ERROR,   "●"),
+            "cancelled":    ("Cancelled",    _ERROR,   "●"),
         }
-        text, color = _map.get(status, (status.capitalize(), _TEXT))
+        text, color, dot = _map.get(status, (status.capitalize(), _TEXT, "●"))
         self._lbl_status.setText(text)
-        self._lbl_status.setStyleSheet(f"color: {color};")
+        self._lbl_status.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: 600; background: transparent; border: none;")
+        self._dot_big.setStyleSheet(f"color: {color}; font-size: 14px; background: transparent; border: none;")
 
     @pyqtSlot(bool)
     def _on_ollama(self, ok: bool) -> None:
-        self._lbl_ollama.setText("Connected" if ok else "Not reachable")
-        self._lbl_ollama.setStyleSheet(f"color: {_SUCCESS if ok else _ERROR};")
+        self._lbl_ollama.setText("● Connected" if ok else "● Offline")
+        self._lbl_ollama.setStyleSheet(f"color: {_SUCCESS if ok else _ERROR}; font-size: 12px; background: transparent; border: none;")
 
 
 # ── Tab: Audio ─────────────────────────────────────────────────────────────────
@@ -799,8 +894,9 @@ class AudioTab(_SettingsPanel):
 # ── Tab: Activation ────────────────────────────────────────────────────────────
 
 class ActivationTab(_SettingsPanel):
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, restart_cb: Callable | None = None, parent=None):
         super().__init__(config, parent)
+        self._restart_cb = restart_cb
         self._build()
 
     def _build(self) -> None:
@@ -878,6 +974,9 @@ class ActivationTab(_SettingsPanel):
                      2, 0, 1, 2)
 
         root.addWidget(grp_cap)
+        root.addWidget(_apply_tag("Activation mode and PTT key: listener restarts on save.", _WARNING))
+        root.addWidget(_apply_tag("Silence parameters: apply immediately on next command capture.", _INFO))
+        root.addWidget(_apply_tag("Wake word: applies on next detection cycle.", _INFO))
         root.addStretch()
 
         save_row, self._save_lbl, btn_save = self._save_row()
@@ -902,6 +1001,9 @@ class ActivationTab(_SettingsPanel):
 
     def _save(self) -> None:
         c = self._config
+        prev_mode = c.get("activation_mode", "wake_word")
+        prev_ptt  = c.get("push_to_talk_key", "ctrl+shift")
+
         mode = "push_to_talk" if self._rb_ptt.isChecked() else "wake_word"
         c.set("activation_mode",   mode)
         c.set("wake_word",         self._edit_ww.text().strip() or "vox")
@@ -909,7 +1011,14 @@ class ActivationTab(_SettingsPanel):
         c.set("silence_threshold", round(self._spin_sil_thresh.value(), 3))
         c.set("silence_duration",  round(self._spin_sil_dur.value(), 1))
         c.save()
-        self._show_saved(self._save_lbl)
+
+        new_ptt = c.get("push_to_talk_key")
+        needs_restart = (mode != prev_mode or new_ptt != prev_ptt)
+        if needs_restart and self._restart_cb:
+            self._restart_cb()
+            self._show_saved(self._save_lbl, ok=True, msg="Saved — listener restarted.")
+        else:
+            self._show_saved(self._save_lbl)
 
 
 # ── Tab: Assistant ─────────────────────────────────────────────────────────────
@@ -946,6 +1055,7 @@ class AssistantTab(_SettingsPanel):
         gv.addWidget(self._spin_hist, 2, 1)
 
         root.addWidget(grp_llm)
+        root.addWidget(_apply_tag("LLM URL and model: apply on next request.", _INFO))
 
         grp_stt = QGroupBox("Speech Recognition (Whisper)")
         sv = QGridLayout(grp_stt)
@@ -983,6 +1093,7 @@ class AssistantTab(_SettingsPanel):
         tv.addLayout(voice_row, 1, 1)
 
         root.addWidget(grp_tts)
+        root.addWidget(_apply_tag("TTS settings: apply immediately on next speech.", _INFO))
         root.addStretch()
 
         save_row, self._save_lbl, btn_save = self._save_row()
@@ -1447,7 +1558,7 @@ class ControlCenter(QMainWindow):
         tabs.addTab(AudioTab(config, app_state, speaker,
                              restart_cb=self.restart_listener_requested.emit,
                              stt_cb=stt_cb),                                      "Audio")
-        tabs.addTab(ActivationTab(config),                                         "Activation")
+        tabs.addTab(ActivationTab(config, restart_cb=self.restart_listener_requested.emit), "Activation")
         tabs.addTab(AssistantTab(config),                                          "Assistant")
         tabs.addTab(ActionsTab(config, reload_cb=reload_cb),                       "Actions")
         tabs.addTab(AliasesTab(config),                                            "Aliases")

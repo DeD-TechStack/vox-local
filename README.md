@@ -30,7 +30,7 @@ Built with [faster-whisper](https://github.com/guillaumekynast/faster-whisper), 
 - **Continuous audio capture** — rolling InputStream with 1.5 s pre-buffer preserves the start of every command
 - **Energy pre-screening** — silent windows skip Whisper entirely, saving CPU
 - **Adaptive noise floor** — exponential moving average tracks ambient noise for reliable VAD
-- **Monitoring state** — overlay and Dashboard show "monitoring" when the wake-word loop is active
+- **Monitoring state** — overlay and Dashboard show "monitoring" (green) when the wake-word loop is active and listening for the wake word
 - **Control Center** — full desktop GUI covering all settings, diagnostics, history, and audio testing
 - **Real mic level meter** — live RMS-based input meter in the overlay and Control Center (not fake animation)
 - **Mic calibration** — 2-phase flow (3 s silence + 3 s speech) measures noise floor, SNR, and suggests a silence threshold
@@ -260,7 +260,7 @@ Overlay HUD + Control Center — show transcript, response, history, diagnostics
 | `silence_threshold` | `0.01` | RMS below which audio is silent |
 | `silence_duration` | `1.5` | Seconds of silence that ends a command |
 | `app_aliases` | see file | Map spoken names → executables or URI schemes |
-| `allowed_actions` | see file | Allowlist of executable actions |
+| `allowed_actions` | see file | Allowlist of executable actions (applies immediately on next LLM call) |
 | `search_dirs` | `~/Documents`, `~/Downloads`, `~/Desktop` | Directories for file search |
 
 ### Settings that apply immediately (no restart)
@@ -269,8 +269,12 @@ Overlay HUD + Control Center — show transcript, response, history, diagnostics
 - `tts_enabled`, `voice_model`, `piper_path` — next TTS call
 - `ollama_model`, `ollama_url` — next LLM request
 - `allowed_actions` — next LLM call (both the prompt and executor allowlist update together)
-- `activation_mode`, `push_to_talk_key` — next listener iteration
+- `silence_threshold`, `silence_duration` — next command capture cycle
 - Audio devices — output: immediate; microphone: listener restarts automatically
+
+### Settings that restart the listener automatically (on Save in the UI)
+
+- `activation_mode`, `push_to_talk_key` — the listener is stopped and restarted when these are saved from the Activation tab; a confirmation message is shown in the tab
 
 ### Settings that require restarting VOX
 

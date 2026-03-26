@@ -178,6 +178,7 @@ def run_app(config: Config, whisper_model):
             self.listener.listening_stopped.connect(
                 lambda: self.state.set_status("transcribing"))
 
+            self.listener.monitoring_started.connect(self.overlay.set_monitoring)
             self.listener.monitoring_started.connect(
                 lambda: self.state.set_status("monitoring"))
 

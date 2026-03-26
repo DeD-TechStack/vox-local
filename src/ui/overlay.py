@@ -12,9 +12,9 @@ _MUTED_LABEL = f"color: #444444; font-size: 10px; letter-spacing: 1px; {_BG}"
 
 _CONTAINER_SS = """
 QFrame#container {
-    background-color: rgba(13, 11, 18, 225);
-    border-radius: 14px;
-    border: 1px solid rgba(168, 85, 247, 80);
+    background-color: rgba(10, 8, 17, 235);
+    border-radius: 16px;
+    border: 1px solid rgba(168, 85, 247, 70);
 }
 """
 
@@ -28,7 +28,7 @@ _BADGE_SS = (
     "padding: 1px 5px;"
 )
 
-W, H = 400, 265
+W, H = 420, 270
 
 
 # ─── Clickable label ──────────────────────────────────────────────────────────
@@ -195,8 +195,8 @@ class OverlayWindow(QWidget):
 
         self._response = QLabel("")
         self._response.setWordWrap(True)
-        self._response.setMaximumHeight(55)
-        self._response.setStyleSheet(f"color: #A855F7; font-size: 13px; {_BG}")
+        self._response.setMaximumHeight(60)
+        self._response.setStyleSheet(f"color: #A855F7; font-size: 12px; {_BG}")
         root.addWidget(self._response)
 
         root.addStretch()
@@ -300,6 +300,17 @@ class OverlayWindow(QWidget):
         self._idle_timer.start(5000)
 
     @pyqtSlot()
+    def set_monitoring(self):
+        self._state = "monitoring"
+        self._set_status("monitoring", "#22c55e")
+        self._waveform.set_active(False)
+        self._footer.setText(self._footer_default)
+        self._footer.setStyleSheet(f"color: #2a2a2a; font-size: 10px; {_BG}")
+        self._footer.setVisible(True)
+        self._idle_timer.stop()
+        self.show()
+
+    @pyqtSlot()
     def set_listening(self):
         self._state = "listening"
         self._set_status("listening", "#2A6FF5", pulse=True, dim="rgba(42,111,245,0.25)")
@@ -347,7 +358,11 @@ class OverlayWindow(QWidget):
             self._state = "responding"
             self._set_status("responding", "#A855F7")
             self._footer.setVisible(False)
-        self._response.setText(self._response.text() + token)
+        current = self._response.text()
+        if len(current) < 280:
+            self._response.setText(current + token)
+        elif not current.endswith("…"):
+            self._response.setText(current[:280] + "…")
 
     @pyqtSlot(str)
     def set_response(self, text: str):
