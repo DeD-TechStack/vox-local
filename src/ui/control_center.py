@@ -1087,9 +1087,10 @@ class ActivationTab(_SettingsPanel):
 # ── Tab: Assistant ─────────────────────────────────────────────────────────────
 
 class AssistantTab(_SettingsPanel):
-    def __init__(self, config: Config, speaker=None, parent=None):
+    def __init__(self, config: Config, speaker=None, language_changed_cb=None, parent=None):
         super().__init__(config, parent)
         self._speaker = speaker
+        self._language_changed_cb = language_changed_cb
         self._build()
 
     def _build(self) -> None:
@@ -1193,6 +1194,7 @@ class AssistantTab(_SettingsPanel):
 
     def _save(self) -> None:
         c = self._config
+        prev_lang = c.get("language", "auto")
         c.set("ollama_url",   self._edit_url.text().strip())
         c.set("ollama_model", self._edit_model.text().strip())
         c.set("max_history",  self._spin_hist.value())
@@ -1204,6 +1206,11 @@ class AssistantTab(_SettingsPanel):
         # but call reload_config() for any speaker that still caches state.
         if self._speaker:
             self._speaker.reload_config()
+        # Notify main app when language changes so the overlay badge and
+        # AppState stay in sync without a full listener restart.
+        new_lang = c.get("language", "auto")
+        if new_lang != prev_lang and self._language_changed_cb:
+            self._language_changed_cb(new_lang)
         self._show_saved(self._save_lbl)
 
 
@@ -1623,6 +1630,7 @@ class DiagnosticsTab(QWidget):
 class ControlCenter(QMainWindow):
     restart_listener_requested = pyqtSignal()
     rerun_validation_requested = pyqtSignal()
+    language_changed           = pyqtSignal(str)   # emitted when language config changes
 
     def __init__(self, config: Config, app_state, speaker,
                  stt_cb: Callable | None = None, executor=None, parent=None):
@@ -1647,7 +1655,8 @@ class ControlCenter(QMainWindow):
                              restart_cb=self.restart_listener_requested.emit,
                              stt_cb=stt_cb),                                      "Audio")
         tabs.addTab(ActivationTab(config, restart_cb=self.restart_listener_requested.emit), "Activation")
-        tabs.addTab(AssistantTab(config, speaker=speaker),                         "Assistant")
+        tabs.addTab(AssistantTab(config, speaker=speaker,
+                                 language_changed_cb=self.language_changed.emit), "Assistant")
         tabs.addTab(ActionsTab(config, reload_cb=reload_cb),                       "Actions")
         tabs.addTab(AliasesTab(config),                                            "Aliases")
         tabs.addTab(DirsTab(config),                                               "Directories")

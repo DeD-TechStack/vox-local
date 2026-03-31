@@ -365,7 +365,24 @@ class Listener(QThread):
                 silence_samples  = int(self.SAMPLE_RATE * silence_duration)
                 keys = [k.strip() for k in ptt_key.split("+")]
 
-                keyboard.wait(ptt_key)
+                # Wait for the PTT hotkey using a short-timeout event loop so that
+                # stop_listener() can interrupt this wait cleanly.  keyboard.wait()
+                # blocks indefinitely and cannot be interrupted by a threading.Event,
+                # which caused stop_listener() to time out and leave a ghost listener
+                # thread alive during listener restarts.
+                _ptt_event = threading.Event()
+                _hook = None
+                try:
+                    _hook = keyboard.add_hotkey(ptt_key, _ptt_event.set, suppress=False)
+                    while not self._stop_flag.is_set():
+                        if _ptt_event.wait(timeout=0.1):
+                            break
+                finally:
+                    if _hook is not None:
+                        try:
+                            keyboard.remove_hotkey(_hook)
+                        except Exception:
+                            pass
 
                 if self._stop_flag.is_set():
                     break
@@ -379,11 +396,13 @@ class Listener(QThread):
                 if command_audio is not None:
                     self._transcribe_and_emit(command_audio)
 
-                for k in keys:
-                    try:
-                        keyboard.wait(k, suppress=False, trigger_on_release=True)
-                    except Exception:
-                        pass
+                # Wait for all PTT keys to be released before next cycle.
+                # Use a polling approach (same stop-flag awareness) instead of
+                # keyboard.wait() to stay interruptible.
+                while not self._stop_flag.is_set():
+                    if not any(keyboard.is_pressed(k) for k in keys):
+                        break
+                    time.sleep(0.05)
 
                 _backoff = 0.0
 

@@ -205,6 +205,12 @@ def run_app(config: Config, whisper_model):
             # Control center actions
             self.control_center.restart_listener_requested.connect(self._restart_listener)
             self.control_center.rerun_validation_requested.connect(self._rerun_validation)
+            # Language changes from the Assistant tab — keep overlay badge and
+            # AppState in sync without requiring a listener restart.
+            self.control_center.language_changed.connect(self.overlay.set_language_mode)
+            self.control_center.language_changed.connect(
+                lambda lang: self.state.language_mode_changed.emit(lang)
+            )
 
             # Speaking lifecycle — callbacks fire from Speaker's background thread.
             # We route through AppState signals so Qt queues the slot calls on the
@@ -285,6 +291,12 @@ def run_app(config: Config, whisper_model):
             if not self.listener.wait(3000):
                 log.warning("Listener did not stop cleanly within 3 s — proceeding anyway.")
             self.listener.start()
+            # Refresh overlay footer and language badge to reflect whatever config
+            # is now active (activation mode, PTT key, language).  Called here so
+            # that both the ControlCenter path and the legacy-settings path always
+            # leave the overlay in sync — no matter which surface triggered the restart.
+            self._apply_activation_mode_ui()
+            self.overlay.set_language_mode(config.get("language", "auto"))
             log.info("Listener restarted.")
             self.state.add_diagnostic("info", "Listener restarted.")
 
@@ -386,11 +398,11 @@ def run_app(config: Config, whisper_model):
                 self.state.set_response(response)
                 self.state.add_history_entry(transcript, response)
 
-            tts_enabled = config.get("tts_enabled", True)
             self.speaker.speak(response)
-            # When TTS is enabled the speaking_ended signal drives the idle transition.
-            # When TTS is disabled speaker.speak() is a no-op, so go idle immediately.
-            if not tts_enabled:
+            # speaking_ended callback drives the idle transition when TTS plays.
+            # When TTS is disabled OR the response is empty, speak() is a no-op
+            # and speaking_ended never fires — go idle immediately in both cases.
+            if not config.get("tts_enabled", True) or not response:
                 self.overlay.set_idle()
                 self.state.set_status("idle")
 
