@@ -25,9 +25,9 @@ _SS_BASE = "background: transparent; border: none;"
 
 _SS_CONTAINER = """
 QFrame#container {
-    background-color: rgba(13, 11, 18, 245);
+    background-color: rgba(10, 8, 18, 252);
     border-radius: 14px;
-    border: 1px solid rgba(168, 85, 247, 90);
+    border: 1px solid rgba(168, 85, 247, 92);
 }
 """
 
@@ -149,11 +149,11 @@ class SettingsDialog(QDialog):
             Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(460, 520)
+        self.setFixedSize(460, 548)
         screen = QGuiApplication.primaryScreen().geometry()
         self.move(
             (screen.width() - 460) // 2,
-            (screen.height() - 520) // 2,
+            (screen.height() - 548) // 2,
         )
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ class SettingsDialog(QDialog):
     def _setup_ui(self):
         self._container = QFrame(self)
         self._container.setObjectName("container")
-        self._container.setFixedSize(460, 520)
+        self._container.setFixedSize(460, 548)
         self._container.setStyleSheet(_SS_CONTAINER)
 
         root = QVBoxLayout(self._container)
@@ -271,6 +271,14 @@ class SettingsDialog(QDialog):
         voice_row.addWidget(browse_btn)
         root.addLayout(voice_row)
 
+        root.addSpacing(10)
+        cc_note = QLabel("Open Control Center from the tray for full configuration.")
+        cc_note.setWordWrap(True)
+        cc_note.setStyleSheet(
+            f"color: rgba(168,85,247,155); font-size: 10px; letter-spacing: 0.2px; {_SS_BASE}"
+        )
+        root.addWidget(cc_note)
+
         root.addStretch()
 
         root.addWidget(_divider())
@@ -355,7 +363,7 @@ class SettingsDialog(QDialog):
         try:
             self._config.save()
             self._status.setText("Saved.")
-            self._status.setStyleSheet(f"color: #1d9e75; font-size: 11px; {_SS_BASE}")
+            self._status.setStyleSheet(f"color: #22c55e; font-size: 11px; {_SS_BASE}")
             QTimer.singleShot(700, self.accept)
         except Exception as e:
             self._status.setText(f"Error: {e}")

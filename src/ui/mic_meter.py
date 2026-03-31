@@ -43,7 +43,7 @@ class MicLevelBar(QWidget):
         w, h = self.width(), self.height()
         radius = h / 2
         # Track
-        p.setBrush(QColor(40, 40, 40))
+        p.setBrush(QColor(18, 15, 28))
         p.drawRoundedRect(0, 0, w, h, radius, radius)
         # Fill
         fill = int(w * self._level)

@@ -141,8 +141,8 @@ QRadioButton::indicator:hover {{ border-color: rgba(168,85,247,0.6); }}
 QGroupBox {{
     background: rgba(255,255,255,0.013);
     border: 1px solid {_BORDER}; border-radius: 10px;
-    margin-top: 18px; padding: 14px 14px 10px 14px;
-    color: {_MUTED}; font-size: 10px; letter-spacing: 1.2px;
+    margin-top: 20px; padding: 14px 14px 12px 14px;
+    color: #7a7490; font-size: 11px; letter-spacing: 1.0px;
     font-weight: 600; text-transform: uppercase;
 }}
 QGroupBox::title {{
@@ -154,16 +154,16 @@ QListWidget, QTableWidget {{
     border-radius: 7px; color: {_TEXT}; font-size: 12px;
     outline: none;
 }}
-QListWidget::item {{ padding: 5px 10px; border-radius: 4px; }}
+QListWidget::item {{ padding: 7px 12px; border-radius: 4px; }}
 QListWidget::item:selected, QTableWidget::item:selected {{
     background: rgba(168,85,247,0.18); color: {_TEXT};
 }}
-QListWidget::item:hover {{ background: rgba(255,255,255,0.04); }}
+QListWidget::item:hover {{ background: rgba(255,255,255,0.05); }}
 QTableWidget {{ gridline-color: {_BORDER}; }}
 QHeaderView::section {{
-    background: rgba(255,255,255,0.025); color: {_MUTED};
+    background: rgba(255,255,255,0.025); color: #7a7490;
     border: none; border-right: 1px solid {_BORDER};
-    padding: 6px 10px; font-size: 10px;
+    padding: 7px 10px; font-size: 10px;
     letter-spacing: 0.9px; font-weight: 600; text-transform: uppercase;
 }}
 QScrollBar:vertical {{
@@ -189,14 +189,19 @@ def _sep() -> QFrame:
 
 def _section(text: str) -> QLabel:
     lbl = QLabel(text.upper())
-    lbl.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 1.2px; font-weight: 500;")
+    lbl.setStyleSheet(
+        f"color: #7a7490; font-size: 11px; letter-spacing: 1.1px; font-weight: 600; "
+        f"background: transparent;"
+    )
     return lbl
 
 
 def _note(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setWordWrap(True)
-    lbl.setStyleSheet(f"color: {_MUTED}; font-size: 11px; line-height: 1.4;")
+    lbl.setStyleSheet(
+        f"color: {_MUTED}; font-size: 11px; line-height: 1.45; background: transparent;"
+    )
     return lbl
 
 
@@ -205,8 +210,9 @@ def _apply_tag(text: str, color: str | None = None) -> QLabel:
     c = color or _INFO
     lbl = QLabel(text)
     lbl.setStyleSheet(
-        f"color: {c}; font-size: 10px; letter-spacing: 0.3px; "
-        f"border-left: 2px solid {c}; padding-left: 6px; margin-top: 2px;"
+        f"color: {c}; font-size: 11px; letter-spacing: 0.2px; "
+        f"border-top: none; border-right: none; border-bottom: none; "
+        f"border-left: 2px solid {c}; padding-left: 7px; margin-top: 2px; "
         f"background: transparent;"
     )
     return lbl
@@ -274,8 +280,8 @@ class DashboardTab(QWidget):
         status_card.setObjectName("status_card")
         status_card.setStyleSheet(
             "QFrame#status_card {"
-            "  background: rgba(168,85,247,0.06);"
-            "  border: 1px solid rgba(168,85,247,0.18);"
+            "  background: rgba(168,85,247,0.07);"
+            "  border: 1px solid rgba(168,85,247,0.22);"
             "  border-radius: 12px;"
             "}"
         )
@@ -288,8 +294,8 @@ class DashboardTab(QWidget):
         left_col.setSpacing(4)
         status_hdr = QLabel("STATUS")
         status_hdr.setStyleSheet(
-            f"color: {_MUTED}; font-size: 9px; letter-spacing: 1.4px; "
-            f"font-weight: 700; background: transparent; border: none;"
+            "color: #7a7490; font-size: 9px; letter-spacing: 1.6px; "
+            "font-weight: 700; background: transparent; border: none;"
         )
         status_row_w = QHBoxLayout()
         status_row_w.setSpacing(7)
@@ -311,16 +317,16 @@ class DashboardTab(QWidget):
 
         def _health_col(hdr_text: str):
             col = QVBoxLayout()
-            col.setSpacing(3)
+            col.setSpacing(4)
             hdr = QLabel(hdr_text)
             hdr.setStyleSheet(
-                f"color: {_MUTED}; font-size: 9px; letter-spacing: 1.2px; "
-                f"font-weight: 700; background: transparent; border: none;"
+                "color: #7a7490; font-size: 9px; letter-spacing: 1.4px; "
+                "font-weight: 700; background: transparent; border: none;"
             )
             val = QLabel("–")
             val.setStyleSheet(
-                f"color: {_TEXT2}; font-size: 12px; font-weight: 500; "
-                f"background: transparent; border: none;"
+                f"color: {_TEXT}; font-size: 12px; font-weight: 600; "
+                "background: transparent; border: none;"
             )
             col.addWidget(hdr)
             col.addWidget(val)
@@ -352,11 +358,15 @@ class DashboardTab(QWidget):
         g.setVerticalSpacing(8)
         g.setColumnStretch(1, 1)
 
+        _val_ss = f"color: {_TEXT}; font-size: 12px; font-weight: 500; background: transparent;"
         self._lbl_model    = QLabel("–")
         self._lbl_language = QLabel("–")
         self._lbl_mode     = QLabel("–")
         self._lbl_mic      = QLabel("–")
         self._lbl_out      = QLabel("–")
+        for w in (self._lbl_model, self._lbl_language, self._lbl_mode,
+                  self._lbl_mic, self._lbl_out):
+            w.setStyleSheet(_val_ss)
 
         for row, (label, widget) in enumerate([
             ("Model",       self._lbl_model),
@@ -383,7 +393,7 @@ class DashboardTab(QWidget):
         self._lbl_action = QLabel("–")
         for w in (self._lbl_cmd, self._lbl_resp, self._lbl_action):
             w.setWordWrap(True)
-            w.setStyleSheet(f"color: {_TEXT2}; font-size: 12px;")
+            w.setStyleSheet(f"color: {_TEXT2}; font-size: 12px; background: transparent;")
 
         for row, (label, widget) in enumerate([
             ("Command",  self._lbl_cmd),
@@ -461,22 +471,22 @@ class DashboardTab(QWidget):
         _map = {
             "idle":         ("Idle",         _MUTED,   "●"),
             "monitoring":   ("Monitoring",   _SUCCESS, "●"),
-            "listening":    ("Listening",    "#2A6FF5","●"),
+            "listening":    ("Listening",    "#3b82f6","●"),
             "transcribing": ("Transcribing", _WARNING, "●"),
             "generating":   ("Generating",   _ACCENT,  "●"),
             "responding":   ("Responding",   _ACCENT,  "●"),
-            "speaking":     ("Speaking",     _SUCCESS, "●"),
+            "speaking":     ("Speaking",     _ACCENT,  "●"),
             "error":        ("Error",        _ERROR,   "●"),
             "cancelled":    ("Cancelled",    _ERROR,   "●"),
         }
         text, color, dot = _map.get(status, (status.capitalize(), _TEXT, "●"))
         self._lbl_status.setText(text)
         self._lbl_status.setStyleSheet(
-            f"color: {color}; font-size: 17px; font-weight: 700; "
-            f"background: transparent; border: none;"
+            f"color: {color}; font-size: 18px; font-weight: 700; "
+            f"background: transparent; border: none; letter-spacing: 0.2px;"
         )
         self._dot_big.setStyleSheet(
-            f"color: {color}; font-size: 13px; background: transparent; border: none;"
+            f"color: {color}; font-size: 14px; background: transparent; border: none;"
         )
 
     @pyqtSlot(bool)
@@ -1234,12 +1244,14 @@ class ActionsTab(_SettingsPanel):
             "even if it appears in a response."
         ))
 
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(["", "Action", "Description"])
+        self._table = QTableWidget(0, 4)
+        self._table.setHorizontalHeaderLabels(["", "Action", "Description", "Risk"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self._table.setColumnWidth(0, 30)
+        self._table.setColumnWidth(3, 72)
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -1270,8 +1282,9 @@ class ActionsTab(_SettingsPanel):
 
     def _load(self) -> None:
         allowed = set(self._config.get("allowed_actions", []))
+        _risk_colors = {"low": _SUCCESS, "medium": _WARNING, "high": _ERROR}
         self._table.setRowCount(0)
-        for action, desc, _risk in _ALL_ACTIONS:
+        for action, desc, risk in _ALL_ACTIONS:
             row = self._table.rowCount()
             self._table.insertRow(row)
             chk = QCheckBox()
@@ -1280,7 +1293,16 @@ class ActionsTab(_SettingsPanel):
             self._table.setCellWidget(row, 0, chk)
             self._table.setItem(row, 1, QTableWidgetItem(action))
             self._table.setItem(row, 2, QTableWidgetItem(desc))
-            self._table.setRowHeight(row, 28)
+            rc = _risk_colors.get(risk, _MUTED)
+            risk_lbl = QLabel(f" {risk} ")
+            risk_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            risk_lbl.setStyleSheet(
+                f"color: {rc}; font-size: 10px; font-weight: 600; "
+                f"border: 1px solid {rc}; border-radius: 4px; "
+                "padding: 1px 4px; background: transparent; letter-spacing: 0.2px;"
+            )
+            self._table.setCellWidget(row, 3, risk_lbl)
+            self._table.setRowHeight(row, 30)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -1517,28 +1539,33 @@ class HistoryTab(QWidget):
         rx = entry.get("response",  "")
         ax = entry.get("action",    "")
 
-        # Header line: timestamp
+        # Timestamp separator
         self._log.append(
-            f'<span style="color:{_MUTED}; font-size:10px;">'
-            f'── {ts} ─────────────</span>'
+            f'<span style="color:#3a3655; font-size:11px;">'
+            f'────────────────────────────────</span>'
+            f'&nbsp;<span style="color:{_MUTED}; font-size:10px; letter-spacing:0.3px;">'
+            f'{_esc(ts)}</span>'
         )
         if tx:
             self._log.append(
-                f'<span style="color:rgba(200,196,224,0.7); font-size:11px;">'
-                f'  <b style="color:{_TEXT2}; letter-spacing:0.5px;">YOU</b>'
-                f'&nbsp;&nbsp;{_esc(tx)}</span>'
+                f'<span style="font-size:12px;">'
+                f'<b style="color:{_TEXT}; letter-spacing:0.8px; font-size:10px;">YOU</b>'
+                f'&nbsp;&nbsp;<span style="color:#ccc8e8;">{_esc(tx)}</span>'
+                f'</span>'
             )
         if ax:
             self._log.append(
-                f'<span style="color:{_SUCCESS}; font-size:11px;">'
-                f'  <b style="letter-spacing:0.5px;">ACTION</b>'
-                f'&nbsp;&nbsp;{_esc(ax)}</span>'
+                f'<span style="font-size:12px;">'
+                f'<b style="color:#4ade80; letter-spacing:0.8px; font-size:10px;">ACTION</b>'
+                f'&nbsp;&nbsp;<span style="color:#4ade80;">{_esc(ax)}</span>'
+                f'</span>'
             )
         elif rx:
             self._log.append(
-                f'<span style="color:{_ACCENT}; font-size:11px;">'
-                f'  <b style="letter-spacing:0.5px;">VOX</b>'
-                f'&nbsp;&nbsp;&nbsp;&nbsp;{_esc(rx)}</span>'
+                f'<span style="font-size:12px;">'
+                f'<b style="color:{_ACCENT}; letter-spacing:0.8px; font-size:10px;">VOX</b>'
+                f'&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#c084fc;">{_esc(rx)}</span>'
+                f'</span>'
             )
         self._log.append("")
         sb = self._log.verticalScrollBar()
@@ -1605,15 +1632,18 @@ class DiagnosticsTab(QWidget):
             "warning": _WARNING,
             "error":   _ERROR,
         }
-        c    = color_map.get(lvl, _TEXT2)
-        icon = {"info": "·", "warning": "▲", "error": "✕"}.get(lvl, "·")
+        c         = color_map.get(lvl, _TEXT2)
+        icon      = {"info": "●", "warning": "▲", "error": "✕"}.get(lvl, "●")
         lvl_label = lvl.upper()
+        msg_color = {"info": _TEXT2, "warning": "#fcd34d", "error": "#fca5a5"}.get(lvl, _TEXT2)
 
         self._log.append(
-            f'<span style="color:{_MUTED}; font-size:10px;">[{ts}]</span> '
-            f'<span style="color:{c}; font-size:10px; font-weight:600;">'
-            f'{icon} {lvl_label}</span> '
-            f'<span style="color:{_TEXT2}; font-size:12px;">{_esc(msg)}</span>'
+            f'<span style="color:#3a3655; font-size:10px;">{_esc(ts)}</span>'
+            f'&nbsp;&nbsp;'
+            f'<span style="color:{c}; font-size:10px; font-weight:700;">'
+            f'{icon}&nbsp;{lvl_label}</span>'
+            f'&nbsp;&nbsp;'
+            f'<span style="color:{msg_color}; font-size:12px;">{_esc(msg)}</span>'
         )
         sb = self._log.verticalScrollBar()
         sb.setValue(sb.maximum())

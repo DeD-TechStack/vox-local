@@ -11,27 +11,35 @@ _BG          = "background: transparent; border: none;"
 _FONT_STACK  = "font-family: 'Segoe UI', 'Inter', 'Helvetica Neue', sans-serif;"
 
 _MUTED_LABEL = (
-    f"color: rgba(180,170,210,0.45); font-size: 9px; letter-spacing: 1.4px; "
-    f"font-weight: 600; text-transform: uppercase; {_FONT_STACK} {_BG}"
+    f"color: rgba(195,185,230,0.72); font-size: 9px; letter-spacing: 1.8px; "
+    f"font-weight: 700; {_FONT_STACK} "
+    "border-top: none; border-right: none; border-bottom: none; "
+    "border-left: 2px solid rgba(168,85,247,60); "
+    "padding-left: 8px; background: transparent;"
 )
 
 _CONTAINER_SS = """
 QFrame#container {
-    background-color: rgba(8, 6, 16, 242);
+    background-color: rgba(8, 6, 16, 250);
     border-radius: 18px;
-    border: 1px solid rgba(168, 85, 247, 55);
+    border: 1px solid rgba(168, 85, 247, 90);
 }
 """
 
 _BADGE_SS = (
-    "background: rgba(168,85,247,18);"
-    "border: 1px solid rgba(168,85,247,80);"
+    "background: rgba(168,85,247,22);"
+    "border: 1px solid rgba(168,85,247,105);"
     "border-radius: 5px;"
-    "color: rgba(168,85,247,190);"
+    "color: rgba(185,110,255,215);"
     "font-size: 9px;"
-    "font-weight: 600;"
-    "letter-spacing: 1.2px;"
-    "padding: 2px 7px;"
+    "font-weight: 700;"
+    "letter-spacing: 1.4px;"
+    "padding: 2px 8px;"
+)
+
+_FOOTER_SS = (
+    f"color: rgba(155,148,185,0.72); font-size: 10px; "
+    f"letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
 )
 
 W, H = 440, 284
@@ -124,19 +132,19 @@ class OverlayWindow(QWidget):
         # Ollama status dot — small, right of title
         self._ollama_dot = QLabel("●")
         self._ollama_dot.setStyleSheet(
-            f"color: rgba(80,80,80,0.8); font-size: 6px; {_FONT_STACK} {_BG}"
+            f"color: rgba(80,80,80,0.8); font-size: 8px; {_FONT_STACK} {_BG}"
         )
         self._ollama_dot.setToolTip("Checking Ollama…")
 
         self._dot = QLabel("●")
         self._dot.setStyleSheet(
-            f"color: rgba(100,95,130,0.7); font-size: 7px; {_FONT_STACK} {_BG}"
+            f"color: rgba(100,95,130,0.7); font-size: 10px; {_FONT_STACK} {_BG}"
         )
 
         self._status_lbl = QLabel("idle")
         self._status_lbl.setStyleSheet(
             f"color: rgba(100,95,130,0.7); font-size: 11px; "
-            f"font-weight: 500; letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
+            f"font-weight: 600; letter-spacing: 0.5px; {_FONT_STACK} {_BG}"
         )
 
         status_row = QHBoxLayout()
@@ -199,7 +207,7 @@ class OverlayWindow(QWidget):
         div2 = QFrame()
         div2.setFrameShape(QFrame.Shape.HLine)
         div2.setFixedHeight(1)
-        div2.setStyleSheet("background: rgba(255,255,255,6); border: none;")
+        div2.setStyleSheet("background: rgba(255,255,255,18); border: none;")
         root.addWidget(div2)
 
         root.addSpacing(10)
@@ -231,10 +239,7 @@ class OverlayWindow(QWidget):
         footer_row.setSpacing(0)
 
         self._footer = QLabel(self._footer_default)
-        self._footer.setStyleSheet(
-            f"color: rgba(100,95,130,0.45); font-size: 10px; "
-            f"letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
-        )
+        self._footer.setStyleSheet(_FOOTER_SS)
 
         self._lang_badge = ClickableLabel("AUTO")
         self._lang_badge.setStyleSheet(_BADGE_SS)
@@ -263,8 +268,8 @@ class OverlayWindow(QWidget):
         self._apply_dot(color)
         self._status_lbl.setText(text)
         self._status_lbl.setStyleSheet(
-            f"color: {color}; font-size: 11px; font-weight: 500; "
-            f"letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
+            f"color: {color}; font-size: 11px; font-weight: 600; "
+            f"letter-spacing: 0.5px; {_FONT_STACK} {_BG}"
         )
 
     def _tick_pulse(self):
@@ -273,7 +278,7 @@ class OverlayWindow(QWidget):
 
     def _apply_dot(self, color: str):
         self._dot.setStyleSheet(
-            f"color: {color}; font-size: 7px; {_FONT_STACK} {_BG}"
+            f"color: {color}; font-size: 10px; {_FONT_STACK} {_BG}"
         )
 
     # ── Mic level ─────────────────────────────────────────────────────────────
@@ -312,10 +317,7 @@ class OverlayWindow(QWidget):
 
     def _restore_footer(self):
         self._footer.setText(self._footer_default)
-        self._footer.setStyleSheet(
-            f"color: rgba(100,95,130,0.45); font-size: 10px; "
-            f"letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
-        )
+        self._footer.setStyleSheet(_FOOTER_SS)
 
     @pyqtSlot()
     def set_cancelled(self):
@@ -332,10 +334,7 @@ class OverlayWindow(QWidget):
         self._set_status("idle", "rgba(100,95,130,0.7)")
         self._waveform.set_active(False)
         self._footer.setText(self._footer_default)
-        self._footer.setStyleSheet(
-            f"color: rgba(100,95,130,0.45); font-size: 10px; "
-            f"letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
-        )
+        self._footer.setStyleSheet(_FOOTER_SS)
         self._footer.setVisible(True)
         self._idle_timer.start(5000)
 
@@ -345,10 +344,7 @@ class OverlayWindow(QWidget):
         self._set_status("monitoring", "#22c55e")
         self._waveform.set_active(False)
         self._footer.setText(self._footer_default)
-        self._footer.setStyleSheet(
-            f"color: rgba(100,95,130,0.45); font-size: 10px; "
-            f"letter-spacing: 0.3px; {_FONT_STACK} {_BG}"
-        )
+        self._footer.setStyleSheet(_FOOTER_SS)
         self._footer.setVisible(True)
         self._idle_timer.stop()
         self.show()
@@ -436,7 +432,7 @@ class OverlayWindow(QWidget):
         color   = "#22c55e" if ok else "#f87171"
         tooltip = "Ollama connected" if ok else "Ollama disconnected"
         self._ollama_dot.setStyleSheet(
-            f"color: {color}; font-size: 6px; {_FONT_STACK} {_BG}"
+            f"color: {color}; font-size: 8px; {_FONT_STACK} {_BG}"
         )
         self._ollama_dot.setToolTip(tooltip)
 
