@@ -65,7 +65,6 @@ class TestPlaybackFallbackRate:
     def test_fallback_uses_target_rate_after_resampling(self, tmp_path):
         cfg = _make_config(tmp_path, {"output_device": 5})
         spk = Speaker(cfg)
-        spk.output_device = 5
 
         wav_path = _write_wav(str(tmp_path / "test.wav"), framerate=22050, n_frames=500)
 
@@ -81,7 +80,7 @@ class TestPlaybackFallbackRate:
         with patch("sounddevice.query_devices", return_value=fake_device_info), \
              patch("sounddevice.play", side_effect=fake_play), \
              patch("sounddevice.wait"):
-            spk._play_wav(wav_path)
+            spk._play_wav(wav_path, output_device=5)
 
         assert len(play_calls) == 2, "Expected primary attempt + one fallback"
 
@@ -107,7 +106,6 @@ class TestPlaybackFallbackRate:
         """
         cfg = _make_config(tmp_path, {"output_device": 5})
         spk = Speaker(cfg)
-        spk.output_device = 5
 
         wav_path = _write_wav(str(tmp_path / "test.wav"), framerate=44100, n_frames=500)
 
@@ -122,7 +120,7 @@ class TestPlaybackFallbackRate:
         with patch("sounddevice.query_devices", return_value=fake_device_info), \
              patch("sounddevice.play", side_effect=fake_play), \
              patch("sounddevice.wait"):
-            spk._play_wav(wav_path)
+            spk._play_wav(wav_path, output_device=5)
 
         assert play_calls[0]["rate"] == 44100
         assert play_calls[1]["rate"] == 44100
@@ -130,7 +128,6 @@ class TestPlaybackFallbackRate:
     def test_no_fallback_when_primary_succeeds(self, tmp_path):
         cfg = _make_config(tmp_path, {"output_device": 5})
         spk = Speaker(cfg)
-        spk.output_device = 5
 
         wav_path = _write_wav(str(tmp_path / "test.wav"), framerate=22050, n_frames=100)
 
@@ -140,7 +137,7 @@ class TestPlaybackFallbackRate:
         with patch("sounddevice.query_devices", return_value=fake_device_info), \
              patch("sounddevice.play", side_effect=lambda audio, samplerate, device: play_calls.append(device)), \
              patch("sounddevice.wait"):
-            spk._play_wav(wav_path)
+            spk._play_wav(wav_path, output_device=5)
 
         assert len(play_calls) == 1
         assert play_calls[0] == 5
@@ -148,14 +145,13 @@ class TestPlaybackFallbackRate:
     def test_no_resampling_when_output_device_is_none(self, tmp_path):
         cfg = _make_config(tmp_path)
         spk = Speaker(cfg)
-        spk.output_device = None
 
         wav_path = _write_wav(str(tmp_path / "test.wav"), framerate=22050, n_frames=100)
 
         play_calls = []
         with patch("sounddevice.play", side_effect=lambda audio, samplerate, device: play_calls.append(samplerate)), \
              patch("sounddevice.wait"):
-            spk._play_wav(wav_path)
+            spk._play_wav(wav_path, output_device=None)
 
         assert len(play_calls) == 1
         assert play_calls[0] == 22050

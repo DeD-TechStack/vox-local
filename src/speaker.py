@@ -20,25 +20,15 @@ class Speaker:
         self._lock = threading.Lock()
         self._on_speak_start: Callable | None = None
         self._on_speak_end:   Callable | None = None
-        self._reload()
 
-    def _reload(self):
-        self.enabled = self.config.get("tts_enabled", True)
-        self.output_device = self.config.get("output_device", None)
-
-        # Resolve relative paths against the project root (parent of config/).
-        project_root = os.path.dirname(os.path.dirname(self.config._path))
-
-        def _resolve(raw: str) -> str:
-            if os.path.isabs(raw):
-                return raw
-            return os.path.normpath(os.path.join(project_root, raw))
-
-        self.piper_path  = _resolve(self.config.get("piper_path",  "piper"))
-        self.voice_model = _resolve(self.config.get("voice_model", "en_US-ryan-high.onnx"))
+    # ── Public API ────────────────────────────────────────────────────────────
 
     def reload_config(self):
-        self._reload()
+        """No-op kept for API compatibility.
+
+        All config values are now read live on every speak() call so there
+        is no stale cached state to reload.
+        """
 
     def set_speaking_callbacks(
         self,
@@ -55,12 +45,32 @@ class Speaker:
         self._on_speak_end   = on_end
 
     def speak(self, text: str):
-        if not self.enabled or not text:
+        """Synthesise and play *text* unless TTS is disabled or text is empty.
+
+        Reads ``tts_enabled`` from config on every call so that toggling TTS
+        in the UI takes effect immediately without restarting the app.
+        """
+        if not self.config.get("tts_enabled", True) or not text:
             return
         thread = threading.Thread(target=self._speak_blocking, args=(text,), daemon=True)
         thread.start()
 
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _resolve_path(self, raw: str) -> str:
+        """Resolve *raw* path relative to the project root when not absolute."""
+        if os.path.isabs(raw):
+            return raw
+        project_root = os.path.dirname(os.path.dirname(self.config._path))
+        return os.path.normpath(os.path.join(project_root, raw))
+
     def _speak_blocking(self, text: str):
+        # Re-read all TTS config values fresh on each call.
+        # This means changes made in the Assistant tab take effect immediately.
+        piper_path   = self._resolve_path(self.config.get("piper_path",  "piper/piper/piper.exe"))
+        voice_model  = self._resolve_path(self.config.get("voice_model", "en_US-ryan-high.onnx"))
+        output_device = self.config.get("output_device", None)
+
         if self._on_speak_start:
             try:
                 self._on_speak_start()
@@ -74,7 +84,7 @@ class Speaker:
                         wav_path = f.name
 
                     proc = subprocess.run(
-                        [self.piper_path, "--model", self.voice_model, "--output_file", wav_path],
+                        [piper_path, "--model", voice_model, "--output_file", wav_path],
                         input=text.encode("utf-8"),
                         capture_output=True,
                         timeout=15,
@@ -92,7 +102,7 @@ class Speaker:
                         log.error("Piper exited successfully but produced no output file.")
                         return
 
-                    self._play_wav(wav_path)
+                    self._play_wav(wav_path, output_device)
 
                 except FileNotFoundError:
                     log.error("Piper not found. Check piper_path in settings.yaml")
@@ -110,7 +120,7 @@ class Speaker:
                 except Exception:
                     pass
 
-    def _play_wav(self, path: str):
+    def _play_wav(self, path: str, output_device):
         with wave.open(path, "rb") as wf:
             n_channels = wf.getnchannels()
             sampwidth  = wf.getsampwidth()
@@ -129,9 +139,9 @@ class Speaker:
         # both primary playback and the fallback path use the correct rate.
         target_rate = framerate
 
-        if self.output_device is not None:
+        if output_device is not None:
             try:
-                dev_rate = int(sd.query_devices(self.output_device)["default_samplerate"])
+                dev_rate = int(sd.query_devices(output_device)["default_samplerate"])
                 if dev_rate != framerate:
                     n_out = int(len(audio) * dev_rate / framerate)
                     audio = np.interp(
@@ -144,7 +154,7 @@ class Speaker:
                 pass
 
         try:
-            sd.play(audio, samplerate=target_rate, device=self.output_device)
+            sd.play(audio, samplerate=target_rate, device=output_device)
             sd.wait()
         except Exception as e:
             log.warning(f"Output device failed ({e}), falling back to default")

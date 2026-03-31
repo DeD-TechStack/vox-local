@@ -15,11 +15,13 @@ from audio_utils import (
     normalize_level,
     has_sufficient_energy,
     update_noise_floor,
+    update_noise_floor_gated,
     estimate_noise_floor,
     estimate_speech_rms,
     suggest_silence_threshold,
     signal_quality_label,
     compute_clipping_fraction,
+    classify_capture_issue,
 )
 
 
@@ -358,3 +360,143 @@ class TestComputeClippingFraction:
 
     def test_none_returns_zero(self):
         assert compute_clipping_fraction(None) == 0.0
+
+
+# ── update_noise_floor_gated ──────────────────────────────────────────────────
+
+class TestUpdateNoiseFloorGated:
+    def test_updates_during_silence(self):
+        """Floor updates when new RMS is at or below gate threshold."""
+        current = 0.01
+        # new_rms = 0.012 < 0.01 * 2.0 = 0.02 → gate open → updates
+        result = update_noise_floor_gated(0.01, 0.012, alpha=0.98)
+        expected = 0.98 * 0.01 + 0.02 * 0.012
+        assert math.isclose(result, expected, rel_tol=1e-6)
+
+    def test_does_not_update_during_speech(self):
+        """Floor stays unchanged when new RMS exceeds gate threshold."""
+        current = 0.01
+        # new_rms = 0.05 > 0.01 * 2.0 = 0.02 → gate closed → no update
+        result = update_noise_floor_gated(0.01, 0.05, alpha=0.98, gate_factor=2.0)
+        assert result == 0.01
+
+    def test_gate_open_when_current_zero(self):
+        """When current is 0.0, gate is always open (startup behaviour)."""
+        result = update_noise_floor_gated(0.0, 0.05, alpha=0.98)
+        expected = 0.98 * 0.0 + 0.02 * 0.05
+        assert math.isclose(result, expected, rel_tol=1e-6)
+
+    def test_speech_prevents_floor_rise(self):
+        """Repeated loud frames do not raise the noise floor."""
+        floor = 0.01
+        for _ in range(100):
+            floor = update_noise_floor_gated(floor, 0.1, alpha=0.98, gate_factor=2.0)
+        # Floor should not have moved from 0.01
+        assert floor == 0.01
+
+    def test_silence_converges_toward_rms(self):
+        """Sustained quiet audio converges the floor to that level."""
+        floor = 0.0
+        for _ in range(300):
+            floor = update_noise_floor_gated(floor, 0.005, alpha=0.98)
+        assert math.isclose(floor, 0.005, rel_tol=0.02)
+
+    def test_returns_float(self):
+        assert isinstance(update_noise_floor_gated(0.01, 0.01), float)
+
+    def test_custom_gate_factor(self):
+        """Lower gate_factor closes gate more aggressively."""
+        # new_rms = 0.015, current = 0.01, gate_factor = 1.2
+        # threshold = 0.01 * 1.2 = 0.012 < 0.015 → gate closed
+        result = update_noise_floor_gated(0.01, 0.015, alpha=0.98, gate_factor=1.2)
+        assert result == 0.01
+
+    def test_has_sufficient_energy_uses_reduced_margin(self):
+        """Default speech_margin is now 2.5 (was 3.5) — more tolerant."""
+        audio = np.full(4096, 0.025, dtype=np.float32)
+        # noise_floor=0.01, rms=0.025, margin=2.5 → threshold=0.025 → exactly passing
+        assert has_sufficient_energy(audio, noise_floor=0.01, speech_margin=2.5) is True
+
+    def test_old_margin_would_have_rejected_quiet_speech(self):
+        """With old margin 3.5, rms=0.025 + floor=0.01 → threshold=0.035 → rejected."""
+        audio = np.full(4096, 0.025, dtype=np.float32)
+        # This verifies the old behavior that we have improved
+        assert has_sufficient_energy(audio, noise_floor=0.01, speech_margin=3.5) is False
+
+
+# ── classify_capture_issue ────────────────────────────────────────────────────
+
+class TestClassifyCaptureIssue:
+    def test_ok_result(self):
+        result = classify_capture_issue(
+            noise_floor=0.003, speech_rms=0.08, clip_frac=0.0, silence_threshold=0.01
+        )
+        assert result["issue"] == "ok"
+        assert result["severity"] == "ok"
+        assert len(result["title"]) > 0
+        assert len(result["detail"]) > 0
+
+    def test_no_signal(self):
+        result = classify_capture_issue(
+            noise_floor=0.001, speech_rms=0.0, clip_frac=0.0, silence_threshold=0.01
+        )
+        assert result["issue"] == "no_signal"
+        assert result["severity"] == "error"
+
+    def test_clipping_detected(self):
+        result = classify_capture_issue(
+            noise_floor=0.01, speech_rms=0.5, clip_frac=0.05, silence_threshold=0.02
+        )
+        assert result["issue"] == "clipping"
+        assert result["severity"] == "error"
+
+    def test_too_quiet(self):
+        result = classify_capture_issue(
+            noise_floor=0.001, speech_rms=0.005, clip_frac=0.0, silence_threshold=0.01
+        )
+        assert result["issue"] == "too_quiet"
+        assert result["severity"] == "error"
+
+    def test_noisy_environment(self):
+        # SNR = 0.04 / 0.03 ≈ 1.33 → very noisy
+        result = classify_capture_issue(
+            noise_floor=0.03, speech_rms=0.04, clip_frac=0.0, silence_threshold=0.02
+        )
+        assert result["issue"] == "noisy_environment"
+        assert result["severity"] == "error"
+
+    def test_poor_snr(self):
+        # SNR = 0.05 / 0.02 = 2.5 → poor but not "very noisy"
+        result = classify_capture_issue(
+            noise_floor=0.02, speech_rms=0.05, clip_frac=0.0, silence_threshold=0.03
+        )
+        assert result["issue"] == "poor_snr"
+        assert result["severity"] == "warning"
+
+    def test_threshold_too_high(self):
+        # silence_threshold >> noise_floor
+        result = classify_capture_issue(
+            noise_floor=0.005, speech_rms=0.08, clip_frac=0.0, silence_threshold=0.10
+        )
+        assert result["issue"] == "threshold_too_high"
+        assert result["severity"] == "warning"
+
+    def test_threshold_too_low(self):
+        # silence_threshold << noise_floor
+        result = classify_capture_issue(
+            noise_floor=0.02, speech_rms=0.08, clip_frac=0.0, silence_threshold=0.005
+        )
+        assert result["issue"] == "threshold_too_low"
+        assert result["severity"] == "warning"
+
+    def test_result_has_required_keys(self):
+        result = classify_capture_issue(0.005, 0.05, 0.0, 0.01)
+        for key in ("issue", "title", "detail", "severity"):
+            assert key in result
+
+    def test_clipping_takes_priority_over_noisy(self):
+        """Clipping check comes before SNR check in the decision tree."""
+        result = classify_capture_issue(
+            noise_floor=0.03, speech_rms=0.04, clip_frac=0.10, silence_threshold=0.02
+        )
+        assert result["issue"] == "clipping"

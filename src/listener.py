@@ -12,10 +12,11 @@ from utils.config import Config
 from utils.logger import get_logger
 from audio_utils import (
     wake_word_in_text,
+    extract_post_wake,
     compute_rms,
     normalize_level,
     has_sufficient_energy,
-    update_noise_floor,
+    update_noise_floor_gated,
 )
 
 log = get_logger("Listener")
@@ -24,12 +25,26 @@ log = get_logger("Listener")
 def _extract_post_wake(text: str, wake_word: str) -> str:
     """Return text that follows the wake word in a transcription string.
 
-    Preserves original casing of the tail (used by existing tests).
+    Preserves original casing of the tail.  Falls back to an accent-
+    normalised search when the direct pattern fails (e.g. "vóx").
     """
     pattern = rf'\b{re.escape(wake_word)}\b'
     match = re.search(pattern, text, flags=re.IGNORECASE)
     if match:
         return text[match.end():].strip()
+
+    # Accent-normalised fallback: find the wake word in the normalised form
+    # and map the end position back to the original string approximately.
+    from audio_utils import normalize_text
+    norm_text = normalize_text(text)
+    norm_wake = normalize_text(wake_word)
+    norm_pattern = rf'\b{re.escape(norm_wake)}\b'
+    norm_match = re.search(norm_pattern, norm_text)
+    if norm_match:
+        # The normalised text is the same length or shorter due to accent
+        # stripping.  Use min() so we never exceed the original length.
+        end = min(norm_match.end(), len(text))
+        return text[end:].strip()
     return ""
 
 
@@ -44,16 +59,33 @@ class Listener(QThread):
 
     SAMPLE_RATE = 16000
 
-    # Wake-word detection window (seconds of audio fed to Whisper per check)
-    _DETECT_WINDOW_S  = 1.0
-    # Pre-buffer duration (seconds of audio kept before wake word is heard)
-    _PRE_BUFFER_S     = 1.5
+    # ── Detection window (audio fed to Whisper for wake-word check) ───────────
+    # Increased from 1.0 s → 1.5 s so that wake words spoken slowly or near
+    # the edge of a window are still captured.
+    _DETECT_WINDOW_S  = 1.5
+
+    # ── Stride between consecutive detection checks ────────────────────────
+    # With stride < window we get overlapping checks (sliding window).
+    # stride=1.0s + window=1.5s → 33% overlap, same Whisper call rate as before.
+    _DETECT_STRIDE_S  = 1.0
+
+    # ── Rolling pre-buffer kept before the wake word ──────────────────────────
+    # Must be >= _DETECT_WINDOW_S so the seed contains the full detection
+    # window when the command capture phase begins.
+    _PRE_BUFFER_S     = 2.0
+
     # Read granularity from the stream
     _READ_CHUNK_S     = 0.1
-    # Noise floor EMA alpha (higher = slower adaptation)
-    _NF_ALPHA         = 0.97
-    # Number of consecutive empty/near-zero captures before emitting a warning
-    _EMPTY_WARN_AFTER = 5
+
+    # Noise floor EMA alpha for update_noise_floor_gated.
+    # Slightly higher (slower) than before so the floor adapts less eagerly
+    # when transient sounds appear.
+    _NF_ALPHA         = 0.98
+
+    # Number of consecutive empty/near-zero captures before emitting a warning.
+    # Raised from 5 → 8 to reduce false "is microphone working?" warnings in
+    # environments with variable silence.
+    _EMPTY_WARN_AFTER = 8
 
     def __init__(self, config: Config, model: WhisperModel):
         super().__init__()
@@ -110,14 +142,16 @@ class Listener(QThread):
 
         Architecture:
         - One sd.InputStream per outer-loop iteration (restarted on error)
-        - 1.5 s pre-buffer so the start of the command is preserved
-        - 1.0 s detection window fed to Whisper for wake-word check
+        - Rolling pre-buffer so the start of the command is preserved
+        - Sliding detection window (stride < window) fed to Whisper
+        - Gated noise-floor EMA: floor only updates during silence so
+          speech does not raise the threshold and cause future speech to
+          be silently rejected
         - Energy pre-screening: skip Whisper on silent windows
-        - Exponential moving average for adaptive noise floor
         """
-        _backoff       = 0.0
-        _noise_floor   = 0.0
-        _empty_count   = 0
+        _backoff      = 0.0
+        _noise_floor  = 0.0
+        _empty_count  = 0
 
         while not self._stop_flag.is_set():
             mic_device      = self.config.get("mic_device", None)
@@ -125,10 +159,13 @@ class Listener(QThread):
             channels        = self._get_device_channels(mic_device)
             read_samples    = int(self.SAMPLE_RATE * self._READ_CHUNK_S)
             window_samples  = int(self.SAMPLE_RATE * self._DETECT_WINDOW_S)
+            stride_samples  = int(self.SAMPLE_RATE * self._DETECT_STRIDE_S)
             pre_buf_samples = int(self.SAMPLE_RATE * self._PRE_BUFFER_S)
 
+            # Rolling pre-buffer — keeps the last _PRE_BUFFER_S seconds of audio
+            # and also serves as the detection window.
             pre_buffer  = deque(maxlen=pre_buf_samples)
-            accumulated = []
+            # Stride counter: how many new samples since the last Whisper check.
             acc_samples = 0
 
             stream = None
@@ -153,21 +190,29 @@ class Listener(QThread):
 
                     rms = compute_rms(mono)
                     self.mic_level.emit(normalize_level(rms))
-                    _noise_floor = update_noise_floor(_noise_floor, rms, alpha=self._NF_ALPHA)
 
-                    # Feed the rolling pre-buffer sample-by-sample
-                    for s in mono:
-                        pre_buffer.append(s)
+                    # Gated noise-floor update: only during silence so that
+                    # speech does not raise the floor and tighten the energy gate.
+                    _noise_floor = update_noise_floor_gated(
+                        _noise_floor, rms, alpha=self._NF_ALPHA
+                    )
 
-                    accumulated.append(mono)
+                    # Extend pre_buffer efficiently (one deque.extend vs N appends)
+                    pre_buffer.extend(mono)
                     acc_samples += len(mono)
 
-                    if acc_samples < window_samples:
+                    # Wait until we have accumulated a full stride of new audio
+                    if acc_samples < stride_samples:
                         continue
 
-                    window = np.concatenate(accumulated)
-                    accumulated = []
-                    acc_samples = 0
+                    acc_samples = 0  # reset stride counter (pre_buffer keeps rolling)
+
+                    # Need at least window_samples in the pre_buffer before running
+                    if len(pre_buffer) < window_samples:
+                        continue
+
+                    # Build detection window from the tail of pre_buffer
+                    window = np.array(list(pre_buffer), dtype=np.float32)[-window_samples:]
 
                     # Skip Whisper on silent windows
                     if not has_sufficient_energy(window, _noise_floor):
@@ -175,7 +220,8 @@ class Listener(QThread):
                         if _empty_count >= self._EMPTY_WARN_AFTER:
                             self.capture_warning.emit(
                                 "info",
-                                f"[wake] {_empty_count} consecutive silent windows — is the microphone working?",
+                                f"[wake] {_empty_count} consecutive silent windows — "
+                                "is the microphone working?",
                             )
                             _empty_count = 0
                         continue
@@ -185,7 +231,9 @@ class Listener(QThread):
                     # Wake word detection — fast (beam_size=1)
                     lang_cfg   = self.config.get("language", "auto")
                     lang_param = None if lang_cfg == "auto" else lang_cfg
-                    segments, _ = self.model.transcribe(window, language=lang_param, beam_size=1)
+                    segments, _ = self.model.transcribe(
+                        window, language=lang_param, beam_size=1
+                    )
                     text = " ".join(s.text.strip() for s in segments).strip()
                     text_lower = text.lower()
                     if text_lower:
@@ -194,7 +242,7 @@ class Listener(QThread):
                     if not wake_word_in_text(text_lower, wake_word):
                         continue
 
-                    # --- Wake word detected ---
+                    # ── Wake word detected ──────────────────────────────────
                     tail_text = _extract_post_wake(text, wake_word)
                     if len(tail_text) <= 1:
                         tail_text = ""
@@ -202,9 +250,13 @@ class Listener(QThread):
                     log.info("Wake word detected — listening for command…")
                     self.listening_started.emit()
 
-                    # Seed command with pre-buffer audio (captures command start)
+                    # Seed command capture with the full pre-buffer so that the
+                    # beginning of the command (spoken right after the wake word)
+                    # is preserved even if it overlaps the detection window.
                     seed = np.array(list(pre_buffer), dtype=np.float32)
-                    command_audio = self._record_command_from_stream(stream, seed)
+                    command_audio = self._record_command_from_stream(
+                        stream, seed, noise_floor=_noise_floor
+                    )
                     self.listening_stopped.emit()
 
                     if command_audio is not None:
@@ -241,11 +293,17 @@ class Listener(QThread):
         self,
         stream: sd.InputStream,
         seed: np.ndarray,
+        noise_floor: float = 0.0,
     ) -> np.ndarray | None:
         """Capture a command on *stream*, prepending pre-buffer *seed*.
 
         Recording stops when silence_duration of silence is observed or
         max_record_duration is reached.
+
+        *noise_floor* is used to compute an adaptive effective silence
+        threshold: ``max(configured_threshold, noise_floor × 1.5)``.
+        This prevents the recording from running indefinitely in environments
+        where ambient noise exceeds the configured threshold.
         """
         all_chunks         = [seed] if seed is not None and seed.size > 0 else []
         consecutive_silent = 0
@@ -254,7 +312,13 @@ class Listener(QThread):
         min_samples        = int(self.SAMPLE_RATE * float(self.config.get("min_listen_duration", 1.0)))
         silence_duration   = float(self.config.get("silence_duration", 2.0))
         silence_samples    = int(self.SAMPLE_RATE * silence_duration)
-        silence_threshold  = float(self.config.get("silence_threshold", 0.02))
+        configured_thresh  = float(self.config.get("silence_threshold", 0.02))
+
+        # Adaptive threshold: if the ambient noise floor is above the
+        # configured threshold, use a slightly higher value so that silence
+        # detection still works in noisier environments.
+        silence_threshold  = max(configured_thresh, noise_floor * 1.5) if noise_floor > 0.0 else configured_thresh
+
         total_samples      = seed.size if seed is not None else 0
 
         while not self._stop_flag.is_set():

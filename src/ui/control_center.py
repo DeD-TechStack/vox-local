@@ -25,6 +25,7 @@ from audio_utils import (
     suggest_silence_threshold,
     signal_quality_label,
     compute_clipping_fraction,
+    classify_capture_issue,
 )
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
@@ -42,19 +43,20 @@ from ui.mic_meter import MicLevelBar
 
 
 # ── Colour tokens ──────────────────────────────────────────────────────────────
-_BG      = "#080611"
-_PANEL   = "#0d0b18"
-_CARD    = "#131020"
-_BORDER  = "#252038"
-_BORDER2 = "#3d3860"
+_BG      = "#07050f"
+_PANEL   = "#0c0a18"
+_CARD    = "#110e1e"
+_BORDER  = "#1e1b2e"
+_BORDER2 = "#352f52"
 _ACCENT  = "#a855f7"
-_TEXT    = "#ebe9f4"
-_TEXT2   = "#b0abc8"
-_MUTED   = "#635e7a"
+_TEXT    = "#eceaf6"
+_TEXT2   = "#aaa6c2"
+_MUTED   = "#5c5773"
 _SUCCESS = "#22c55e"
 _WARNING = "#f59e0b"
 _ERROR   = "#f87171"
 _INFO    = "#38bdf8"
+_FONT    = "'Segoe UI', 'Inter', 'Helvetica Neue', sans-serif"
 
 # All known executor actions with description and risk label
 _ALL_ACTIONS = [
@@ -75,7 +77,8 @@ _ALL_ACTIONS = [
 
 _CC_STYLE = f"""
 QMainWindow, QWidget {{
-    background: {_BG}; color: {_TEXT}; font-size: 13px;
+    background: {_BG}; color: {_TEXT};
+    font-size: 13px; font-family: {_FONT};
 }}
 QTabWidget::pane {{
     border: 1px solid {_BORDER}; background: {_PANEL};
@@ -83,48 +86,51 @@ QTabWidget::pane {{
     border-bottom-right-radius: 8px;
 }}
 QTabBar::tab {{
-    background: {_BG}; color: {_MUTED}; padding: 9px 20px;
+    background: {_BG}; color: {_MUTED}; padding: 10px 22px;
     border: none; border-bottom: 2px solid transparent; font-size: 12px;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.4px;
 }}
-QTabBar::tab:selected {{ color: {_ACCENT}; border-bottom: 2px solid {_ACCENT}; font-weight: 500; }}
+QTabBar::tab:selected {{
+    color: {_ACCENT}; border-bottom: 2px solid {_ACCENT}; font-weight: 600;
+}}
 QTabBar::tab:hover:!selected {{ color: {_TEXT2}; border-bottom: 2px solid {_BORDER2}; }}
 QPushButton {{
-    background: rgba(168,85,247,0.10); border: 1px solid rgba(168,85,247,0.25);
-    border-radius: 6px; color: {_TEXT}; padding: 6px 16px; font-size: 12px;
+    background: rgba(168,85,247,0.10); border: 1px solid rgba(168,85,247,0.22);
+    border-radius: 7px; color: {_TEXT}; padding: 7px 18px;
+    font-size: 12px; font-weight: 500;
 }}
 QPushButton:hover {{ background: rgba(168,85,247,0.20); border-color: rgba(168,85,247,0.45); }}
 QPushButton:pressed {{ background: rgba(168,85,247,0.32); }}
 QPushButton:disabled {{ background: rgba(255,255,255,0.03); border-color: {_BORDER}; color: {_MUTED}; }}
 QPushButton#danger {{
-    background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.25);
+    background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.22);
 }}
-QPushButton#danger:hover {{ background: rgba(248,113,113,0.20); border-color: rgba(248,113,113,0.45); }}
+QPushButton#danger:hover {{ background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.45); }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
     background: rgba(255,255,255,0.04); border: 1px solid {_BORDER};
-    border-radius: 5px; color: {_TEXT}; padding: 5px 9px; font-size: 12px;
+    border-radius: 6px; color: {_TEXT}; padding: 6px 10px; font-size: 12px;
 }}
 QTextEdit {{
-    background: rgba(0,0,0,0.25); border: 1px solid {_BORDER};
-    border-radius: 5px; color: {_TEXT2}; padding: 6px 8px; font-size: 12px;
+    background: rgba(0,0,0,0.22); border: 1px solid {_BORDER};
+    border-radius: 6px; color: {_TEXT2}; padding: 8px 10px;
+    font-size: 12px; line-height: 1.55;
     selection-background-color: rgba(168,85,247,0.30);
 }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-    border-color: rgba(168,85,247,0.55); background: rgba(168,85,247,0.05);
+    border-color: rgba(168,85,247,0.50); background: rgba(168,85,247,0.05);
 }}
 QComboBox::drop-down {{ border: none; padding-right: 6px; }}
-QCheckBox {{ color: {_TEXT}; font-size: 12px; spacing: 8px; }}
+QCheckBox {{ color: {_TEXT}; font-size: 12px; spacing: 9px; }}
 QCheckBox::indicator {{
     width: 15px; height: 15px;
     border: 1px solid {_BORDER2}; border-radius: 4px;
     background: rgba(255,255,255,0.04);
 }}
 QCheckBox::indicator:checked {{
-    background: {_ACCENT}; border-color: {_ACCENT};
-    image: none;
+    background: {_ACCENT}; border-color: {_ACCENT}; image: none;
 }}
 QCheckBox::indicator:hover {{ border-color: rgba(168,85,247,0.6); }}
-QRadioButton {{ color: {_TEXT}; font-size: 12px; spacing: 8px; }}
+QRadioButton {{ color: {_TEXT}; font-size: 12px; spacing: 9px; }}
 QRadioButton::indicator {{
     width: 14px; height: 14px;
     border: 1px solid {_BORDER2}; border-radius: 7px;
@@ -133,30 +139,32 @@ QRadioButton::indicator {{
 QRadioButton::indicator:checked {{ background: {_ACCENT}; border-color: {_ACCENT}; }}
 QRadioButton::indicator:hover {{ border-color: rgba(168,85,247,0.6); }}
 QGroupBox {{
-    background: rgba(255,255,255,0.015);
-    border: 1px solid {_BORDER}; border-radius: 8px;
-    margin-top: 16px; padding: 12px 12px 8px 12px;
-    color: {_MUTED}; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    background: rgba(255,255,255,0.013);
+    border: 1px solid {_BORDER}; border-radius: 10px;
+    margin-top: 18px; padding: 14px 14px 10px 14px;
+    color: {_MUTED}; font-size: 10px; letter-spacing: 1.2px;
+    font-weight: 600; text-transform: uppercase;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin; subcontrol-position: top left;
-    padding: 0 8px; left: 12px; top: 2px;
+    padding: 0 8px; left: 14px; top: 2px;
 }}
 QListWidget, QTableWidget {{
-    background: rgba(0,0,0,0.2); border: 1px solid {_BORDER};
-    border-radius: 6px; color: {_TEXT}; font-size: 12px;
+    background: rgba(0,0,0,0.18); border: 1px solid {_BORDER};
+    border-radius: 7px; color: {_TEXT}; font-size: 12px;
     outline: none;
 }}
-QListWidget::item {{ padding: 4px 8px; border-radius: 4px; }}
+QListWidget::item {{ padding: 5px 10px; border-radius: 4px; }}
 QListWidget::item:selected, QTableWidget::item:selected {{
-    background: rgba(168,85,247,0.20); color: {_TEXT};
+    background: rgba(168,85,247,0.18); color: {_TEXT};
 }}
 QListWidget::item:hover {{ background: rgba(255,255,255,0.04); }}
 QTableWidget {{ gridline-color: {_BORDER}; }}
 QHeaderView::section {{
-    background: rgba(255,255,255,0.03); color: {_MUTED};
+    background: rgba(255,255,255,0.025); color: {_MUTED};
     border: none; border-right: 1px solid {_BORDER};
-    padding: 5px 10px; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 6px 10px; font-size: 10px;
+    letter-spacing: 0.9px; font-weight: 600; text-transform: uppercase;
 }}
 QScrollBar:vertical {{
     background: transparent; width: 5px; margin: 0;
@@ -261,60 +269,77 @@ class DashboardTab(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(16)
 
-        # ── Status row at top ─────────────────────────────────────────────────
+        # ── Status hero card ──────────────────────────────────────────────────
         status_card = QFrame()
         status_card.setObjectName("status_card")
         status_card.setStyleSheet(
-            f"QFrame#status_card {{ "
-            f"background: rgba(168,85,247,0.07); "
-            f"border: 1px solid rgba(168,85,247,0.20); "
-            f"border-radius: 10px; padding: 12px 16px; }}"
+            "QFrame#status_card {"
+            "  background: rgba(168,85,247,0.06);"
+            "  border: 1px solid rgba(168,85,247,0.18);"
+            "  border-radius: 12px;"
+            "}"
         )
         sc_layout = QHBoxLayout(status_card)
-        sc_layout.setContentsMargins(16, 12, 16, 12)
-        sc_layout.setSpacing(12)
+        sc_layout.setContentsMargins(20, 16, 20, 16)
+        sc_layout.setSpacing(14)
 
+        # Left: status indicator
+        left_col = QVBoxLayout()
+        left_col.setSpacing(4)
+        status_hdr = QLabel("STATUS")
+        status_hdr.setStyleSheet(
+            f"color: {_MUTED}; font-size: 9px; letter-spacing: 1.4px; "
+            f"font-weight: 700; background: transparent; border: none;"
+        )
+        status_row_w = QHBoxLayout()
+        status_row_w.setSpacing(7)
         self._dot_big = QLabel("●")
-        self._dot_big.setStyleSheet(f"color: {_MUTED}; font-size: 14px; background: transparent; border: none;")
+        self._dot_big.setStyleSheet(
+            f"color: {_MUTED}; font-size: 13px; background: transparent; border: none;"
+        )
         self._lbl_status = QLabel("Idle")
-        self._lbl_status.setStyleSheet(f"color: {_TEXT}; font-size: 16px; font-weight: 600; background: transparent; border: none;")
-        sc_layout.addWidget(self._dot_big)
-        sc_layout.addWidget(self._lbl_status)
-        sc_layout.addStretch()
+        self._lbl_status.setStyleSheet(
+            f"color: {_TEXT}; font-size: 17px; font-weight: 700; "
+            f"background: transparent; border: none;"
+        )
+        status_row_w.addWidget(self._dot_big)
+        status_row_w.addWidget(self._lbl_status)
+        status_row_w.addStretch()
+        left_col.addWidget(status_hdr)
+        left_col.addLayout(status_row_w)
+        sc_layout.addLayout(left_col, 1)
 
-        # Ollama health indicator
-        ollama_col = QVBoxLayout()
-        ollama_col.setSpacing(2)
-        self._lbl_ollama_hdr = QLabel("LLM")
-        self._lbl_ollama_hdr.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 0.8px; background: transparent; border: none;")
-        self._lbl_ollama = QLabel("–")
-        self._lbl_ollama.setStyleSheet(f"color: {_TEXT}; font-size: 12px; background: transparent; border: none;")
-        ollama_col.addWidget(self._lbl_ollama_hdr)
-        ollama_col.addWidget(self._lbl_ollama)
+        def _health_col(hdr_text: str):
+            col = QVBoxLayout()
+            col.setSpacing(3)
+            hdr = QLabel(hdr_text)
+            hdr.setStyleSheet(
+                f"color: {_MUTED}; font-size: 9px; letter-spacing: 1.2px; "
+                f"font-weight: 700; background: transparent; border: none;"
+            )
+            val = QLabel("–")
+            val.setStyleSheet(
+                f"color: {_TEXT2}; font-size: 12px; font-weight: 500; "
+                f"background: transparent; border: none;"
+            )
+            col.addWidget(hdr)
+            col.addWidget(val)
+            return col, val
 
-        piper_col = QVBoxLayout()
-        piper_col.setSpacing(2)
-        self._lbl_piper_hdr = QLabel("TTS")
-        self._lbl_piper_hdr.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 0.8px; background: transparent; border: none;")
-        self._lbl_piper = QLabel("–")
-        self._lbl_piper.setStyleSheet(f"color: {_TEXT}; font-size: 12px; background: transparent; border: none;")
-        piper_col.addWidget(self._lbl_piper_hdr)
-        piper_col.addWidget(self._lbl_piper)
-
-        voice_col = QVBoxLayout()
-        voice_col.setSpacing(2)
-        self._lbl_voice_hdr = QLabel("VOICE")
-        self._lbl_voice_hdr.setStyleSheet(f"color: {_MUTED}; font-size: 10px; letter-spacing: 0.8px; background: transparent; border: none;")
-        self._lbl_voice = QLabel("–")
-        self._lbl_voice.setStyleSheet(f"color: {_TEXT}; font-size: 12px; background: transparent; border: none;")
-        voice_col.addWidget(self._lbl_voice_hdr)
-        voice_col.addWidget(self._lbl_voice)
-
-        for col in (ollama_col, piper_col, voice_col):
+        for hdr_text in ("LLM", "TTS", "VOICE"):
             sep = QFrame()
             sep.setFrameShape(QFrame.Shape.VLine)
-            sep.setStyleSheet(f"background: rgba(168,85,247,0.20); border: none; max-width: 1px;")
+            sep.setStyleSheet(
+                "background: rgba(168,85,247,0.15); border: none; max-width: 1px;"
+            )
             sc_layout.addWidget(sep)
+            col, val = _health_col(hdr_text)
+            if hdr_text == "LLM":
+                self._lbl_ollama = val
+            elif hdr_text == "TTS":
+                self._lbl_piper = val
+            else:
+                self._lbl_voice = val
             sc_layout.addLayout(col)
 
         root.addWidget(status_card)
@@ -391,10 +416,16 @@ class DashboardTab(QWidget):
         voice_raw = c.get("voice_model", "")
         voice_ok  = os.path.exists(_resolve(project_root, voice_raw))
 
-        self._lbl_piper.setText("● Found" if piper_ok else "● Not found")
-        self._lbl_piper.setStyleSheet(f"color: {_SUCCESS if piper_ok else _ERROR}; font-size: 12px; background: transparent; border: none;")
-        self._lbl_voice.setText("● Found" if voice_ok else "● Not found")
-        self._lbl_voice.setStyleSheet(f"color: {_SUCCESS if voice_ok else _ERROR}; font-size: 12px; background: transparent; border: none;")
+        self._lbl_piper.setText("● Found" if piper_ok else "● Missing")
+        self._lbl_piper.setStyleSheet(
+            f"color: {_SUCCESS if piper_ok else _ERROR}; font-size: 12px; "
+            f"font-weight: 500; background: transparent; border: none;"
+        )
+        self._lbl_voice.setText("● Found" if voice_ok else "● Missing")
+        self._lbl_voice.setStyleSheet(
+            f"color: {_SUCCESS if voice_ok else _ERROR}; font-size: 12px; "
+            f"font-weight: 500; background: transparent; border: none;"
+        )
 
         self._lbl_model.setText(c.get("ollama_model", "–"))
         self._lbl_language.setText(c.get("language", "auto").upper())
@@ -440,13 +471,21 @@ class DashboardTab(QWidget):
         }
         text, color, dot = _map.get(status, (status.capitalize(), _TEXT, "●"))
         self._lbl_status.setText(text)
-        self._lbl_status.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: 600; background: transparent; border: none;")
-        self._dot_big.setStyleSheet(f"color: {color}; font-size: 14px; background: transparent; border: none;")
+        self._lbl_status.setStyleSheet(
+            f"color: {color}; font-size: 17px; font-weight: 700; "
+            f"background: transparent; border: none;"
+        )
+        self._dot_big.setStyleSheet(
+            f"color: {color}; font-size: 13px; background: transparent; border: none;"
+        )
 
     @pyqtSlot(bool)
     def _on_ollama(self, ok: bool) -> None:
         self._lbl_ollama.setText("● Connected" if ok else "● Offline")
-        self._lbl_ollama.setStyleSheet(f"color: {_SUCCESS if ok else _ERROR}; font-size: 12px; background: transparent; border: none;")
+        self._lbl_ollama.setStyleSheet(
+            f"color: {_SUCCESS if ok else _ERROR}; font-size: 12px; "
+            f"font-weight: 500; background: transparent; border: none;"
+        )
 
 
 # ── Tab: Audio ─────────────────────────────────────────────────────────────────
@@ -796,22 +835,36 @@ class AudioTab(_SettingsPanel):
             "good": _SUCCESS, "fair": _WARNING, "poor": _ERROR, "no_signal": _ERROR
         }.get(ql, _MUTED)
 
+        # Structured issue diagnosis
+        sil_thresh = float(self._config.get("silence_threshold", 0.02))
+        diagnosis  = classify_capture_issue(nf, result["speech_rms"], cf, sil_thresh)
+        sev_color  = {
+            "ok": _SUCCESS, "warning": _WARNING, "error": _ERROR
+        }.get(diagnosis["severity"], _MUTED)
+
+        snr_text = f"{snr:.1f}×" if snr != float("inf") else "∞"
+
         lines = [
-            f"Noise floor: {nf:.4f} RMS",
-            f"SNR: {snr:.1f}×" if snr != float('inf') else "SNR: ∞ (perfect silence)",
-            f"Clipping: {cf*100:.1f}%",
-            f"Suggested silence threshold: {sug:.4f}",
-            f"Quality: {ql.upper()} — {ex}",
+            f"Noise floor:              {nf:.4f} RMS",
+            f"Speech RMS:               {result['speech_rms']:.4f}",
+            f"SNR:                      {snr_text}",
+            f"Clipping:                 {cf*100:.1f}%",
+            f"Suggested threshold:      {sug:.4f}",
+            f"Signal quality:           {ql.upper()} — {ex}",
+            "",
+            f"Diagnosis:  {diagnosis['title']}",
+            f"  {diagnosis['detail']}",
         ]
         self._calib_result.setText("\n".join(lines))
-        self._calib_result.setStyleSheet(f"color: {q_color}; font-size: 11px;")
+        self._calib_result.setStyleSheet(
+            f"color: {sev_color}; font-size: 11px; line-height: 1.5;"
+        )
 
         self._suggested_threshold = sug
         self._btn_apply_thresh.setVisible(True)
 
         # Update health card
         self._lbl_noise.setText(f"{nf:.4f}")
-        snr_text = f"{snr:.1f}×" if snr != float('inf') else "∞"
         self._lbl_snr.setText(snr_text)
         self._lbl_clip.setText(f"{cf*100:.1f}%")
         self._lbl_clip.setStyleSheet(f"color: {_ERROR if cf > 0.01 else _SUCCESS};")
@@ -819,9 +872,10 @@ class AudioTab(_SettingsPanel):
         self._lbl_quality.setStyleSheet(f"color: {q_color};")
 
         self._state.add_diagnostic(
-            "info",
+            "info" if diagnosis["severity"] == "ok" else diagnosis["severity"],
             f"Calibration: noise_floor={nf:.4f}, SNR={snr_text}, "
-            f"quality={ql}, suggested_threshold={sug:.4f}",
+            f"quality={ql}, suggested_threshold={sug:.4f}, "
+            f"diagnosis={diagnosis['issue']}",
         )
 
     @pyqtSlot(str)
@@ -878,9 +932,18 @@ class AudioTab(_SettingsPanel):
         q_color = {
             "good": _SUCCESS, "fair": _WARNING, "poor": _ERROR, "no_signal": _ERROR
         }.get(quality, _MUTED)
+
+        hint = ""
+        if quality == "no_signal":
+            hint = "\nCheck that the correct microphone is selected and not muted."
+        elif quality == "poor":
+            hint = "\nTry speaking louder or closer to the microphone, or run Calibration."
+        elif transcript == "(empty)" and quality in ("good", "fair"):
+            hint = "\nAudio is present but Whisper returned nothing — try a different language setting."
+
         self._stt_result.setText(
             f'Transcript: "{transcript}"\n'
-            f"Quality: {quality.upper()} — {explanation}"
+            f"Quality: {quality.upper()} — {explanation}{hint}"
         )
         self._stt_result.setStyleSheet(f"color: {q_color}; font-size: 11px;")
 
@@ -1024,8 +1087,9 @@ class ActivationTab(_SettingsPanel):
 # ── Tab: Assistant ─────────────────────────────────────────────────────────────
 
 class AssistantTab(_SettingsPanel):
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, speaker=None, parent=None):
         super().__init__(config, parent)
+        self._speaker = speaker
         self._build()
 
     def _build(self) -> None:
@@ -1136,6 +1200,10 @@ class AssistantTab(_SettingsPanel):
         c.set("tts_enabled",  self._chk_tts.isChecked())
         c.set("voice_model",  self._edit_voice.text().strip())
         c.save()
+        # Speaker reads config live so no reload is strictly needed,
+        # but call reload_config() for any speaker that still caches state.
+        if self._speaker:
+            self._speaker.reload_config()
         self._show_saved(self._save_lbl)
 
 
@@ -1440,15 +1508,29 @@ class HistoryTab(QWidget):
         rx = entry.get("response",  "")
         ax = entry.get("action",    "")
 
-        parts = [f'<span style="color:{_MUTED};">[{ts}]</span>']
+        # Header line: timestamp
+        self._log.append(
+            f'<span style="color:{_MUTED}; font-size:10px;">'
+            f'── {ts} ─────────────</span>'
+        )
         if tx:
-            parts.append(f'<span style="color:#e2e0ea;">YOU: {_esc(tx)}</span>')
+            self._log.append(
+                f'<span style="color:rgba(200,196,224,0.7); font-size:11px;">'
+                f'  <b style="color:{_TEXT2}; letter-spacing:0.5px;">YOU</b>'
+                f'&nbsp;&nbsp;{_esc(tx)}</span>'
+            )
         if ax:
-            parts.append(f'<span style="color:{_SUCCESS};">ACTION: {_esc(ax)}</span>')
+            self._log.append(
+                f'<span style="color:{_SUCCESS}; font-size:11px;">'
+                f'  <b style="letter-spacing:0.5px;">ACTION</b>'
+                f'&nbsp;&nbsp;{_esc(ax)}</span>'
+            )
         elif rx:
-            parts.append(f'<span style="color:{_ACCENT};">VOX: {_esc(rx)}</span>')
-
-        self._log.append("  ".join(parts))
+            self._log.append(
+                f'<span style="color:{_ACCENT}; font-size:11px;">'
+                f'  <b style="letter-spacing:0.5px;">VOX</b>'
+                f'&nbsp;&nbsp;&nbsp;&nbsp;{_esc(rx)}</span>'
+            )
         self._log.append("")
         sb = self._log.verticalScrollBar()
         sb.setValue(sb.maximum())
@@ -1510,15 +1592,19 @@ class DiagnosticsTab(QWidget):
         ts  = entry.get("timestamp", "")
         msg = entry.get("message", "")
         color_map = {
-            "info":    _MUTED,
+            "info":    _INFO,
             "warning": _WARNING,
             "error":   _ERROR,
         }
-        c = color_map.get(lvl, _TEXT)
-        icon = {"info": "ℹ", "warning": "⚠", "error": "✖"}.get(lvl, "·")
+        c    = color_map.get(lvl, _TEXT2)
+        icon = {"info": "·", "warning": "▲", "error": "✕"}.get(lvl, "·")
+        lvl_label = lvl.upper()
+
         self._log.append(
-            f'<span style="color:{_MUTED};">[{ts}]</span> '
-            f'<span style="color:{c};">{icon} {_esc(msg)}</span>'
+            f'<span style="color:{_MUTED}; font-size:10px;">[{ts}]</span> '
+            f'<span style="color:{c}; font-size:10px; font-weight:600;">'
+            f'{icon} {lvl_label}</span> '
+            f'<span style="color:{_TEXT2}; font-size:12px;">{_esc(msg)}</span>'
         )
         sb = self._log.verticalScrollBar()
         sb.setValue(sb.maximum())
@@ -1559,7 +1645,7 @@ class ControlCenter(QMainWindow):
                              restart_cb=self.restart_listener_requested.emit,
                              stt_cb=stt_cb),                                      "Audio")
         tabs.addTab(ActivationTab(config, restart_cb=self.restart_listener_requested.emit), "Activation")
-        tabs.addTab(AssistantTab(config),                                          "Assistant")
+        tabs.addTab(AssistantTab(config, speaker=speaker),                         "Assistant")
         tabs.addTab(ActionsTab(config, reload_cb=reload_cb),                       "Actions")
         tabs.addTab(AliasesTab(config),                                            "Aliases")
         tabs.addTab(DirsTab(config),                                               "Directories")
