@@ -233,6 +233,11 @@ class Brain:
         content = full_content.strip()
         if not content:
             log.warning("Brain: model returned empty content.")
+            # Writing {"role":"assistant","content":""} to history would pollute
+            # future Ollama context with a meaningless empty turn.  Discard the
+            # whole turn — the user message is still on the stack, so pop it.
+            self.history.pop()
+            return "", False
 
         # Store a clean summary in history — avoid raw JSON blobs in memory
         history_content = content

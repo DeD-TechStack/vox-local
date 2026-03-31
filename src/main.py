@@ -158,7 +158,11 @@ def run_app(config: Config, whisper_model):
                 stt_cb=self._stt_test_transcribe,
                 executor=self.executor,
             )
-            self._brain_worker  = None
+            self._brain_worker     = None
+            # Monotonically increasing counter — bumped on every new transcription
+            # and on timeout so that any response_ready still in the Qt event
+            # queue from a superseded worker is recognised as stale and discarded.
+            self._brain_generation = 0
 
             self._connect_signals()
             self._setup_tray()
@@ -350,6 +354,13 @@ def run_app(config: Config, whisper_model):
         # ── Transcription ─────────────────────────────────────────────────────
 
         def on_transcription(self, text: str):
+            # Stop the previous timeout before doing anything else.  Without this,
+            # an old 35 s timer firing after the new worker starts would call
+            # _on_brain_timeout with self._brain_worker pointing to the *new* worker
+            # and cancel it prematurely.
+            if hasattr(self, "_brain_timeout"):
+                self._brain_timeout.stop()
+
             if self._brain_worker and self._brain_worker.isRunning():
                 log.info("New transcription — cancelling running worker.")
                 self._brain_worker.cancel()
@@ -365,12 +376,27 @@ def run_app(config: Config, whisper_model):
             self.state.set_transcript(text)
             self.state.set_status("generating")
 
+            # Advance the generation counter.  The lambda below captures the
+            # current value so that any response_ready already in the Qt event
+            # queue from the previous worker (which may have completed before
+            # cancel() was called) is silently discarded rather than processed
+            # as if it were the answer to the new transcription.
+            self._brain_generation += 1
+            _gen = self._brain_generation
+
             self._brain_worker = BrainWorker(self.brain, text)
             self._brain_worker.token_received.connect(self.overlay.append_token)
             self._brain_worker.generating_started.connect(self.overlay.set_generating)
             self._brain_worker.generating_started.connect(
                 lambda: self.state.set_status("generating"))
-            self._brain_worker.response_ready.connect(self.on_response)
+            self._brain_worker.response_ready.connect(
+                lambda resp, is_act, g=_gen:
+                    self.on_response(resp, is_act) if g == self._brain_generation
+                    else log.info(
+                        f"Discarding stale brain response "
+                        f"(gen {g}, current {self._brain_generation})."
+                    )
+            )
             self._brain_worker.start()
 
             self._brain_timeout = QTimer()
@@ -389,6 +415,11 @@ def run_app(config: Config, whisper_model):
                     log.warning("Brain worker did not stop after cancel — terminating.")
                     self._brain_worker.terminate()
                     self._brain_worker.wait(1000)
+                # Advance the generation counter and clear the worker reference so
+                # that any response_ready that was already queued before cancel()
+                # took effect is rejected by the lambda guard in on_transcription.
+                self._brain_generation += 1
+                self._brain_worker = None
                 self.overlay.set_idle()
                 self.state.set_status("idle")
                 self.state.add_diagnostic("error", "Brain worker timed out after 35 s.")
