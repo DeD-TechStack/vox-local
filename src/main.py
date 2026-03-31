@@ -353,8 +353,13 @@ def run_app(config: Config, whisper_model):
             if self._brain_worker and self._brain_worker.isRunning():
                 log.info("New transcription — cancelling running worker.")
                 self._brain_worker.cancel()
-                self._brain_worker.wait(2000)
+                # Wait briefly for cooperative cancellation.  The cancel flag is
+                # checked on every stream chunk so this almost always resolves in
+                # well under 500 ms.  A full 2 s wait was blocking the Qt event
+                # loop unnecessarily and making barge-in feel unresponsive.
+                self._brain_worker.wait(500)
                 self.overlay.set_cancelled()
+                self.state.add_diagnostic("info", "Generation cancelled — new command received.")
 
             self.overlay.set_transcript(text)
             self.state.set_transcript(text)
@@ -375,8 +380,15 @@ def run_app(config: Config, whisper_model):
 
         def _on_brain_timeout(self):
             if self._brain_worker and self._brain_worker.isRunning():
-                log.error("Brain worker timed out — resetting to idle.")
-                self._brain_worker.terminate()
+                log.error("Brain worker timed out — cancelling cooperatively.")
+                self._brain_worker.cancel()
+                if not self._brain_worker.wait(2000):
+                    # Ollama may be hanging mid-chunk and unresponsive to the cancel
+                    # flag (the flag is only checked between received lines).
+                    # Terminate as a last resort to unblock the thread.
+                    log.warning("Brain worker did not stop after cancel — terminating.")
+                    self._brain_worker.terminate()
+                    self._brain_worker.wait(1000)
                 self.overlay.set_idle()
                 self.state.set_status("idle")
                 self.state.add_diagnostic("error", "Brain worker timed out after 35 s.")
@@ -396,7 +408,10 @@ def run_app(config: Config, whisper_model):
             else:
                 self.overlay.set_response(response)
                 self.state.set_response(response)
-                self.state.add_history_entry(transcript, response)
+                # Skip history entry when the model returned nothing — an empty
+                # entry in session history is misleading and carries no information.
+                if response:
+                    self.state.add_history_entry(transcript, response)
 
             self.speaker.speak(response)
             # speaking_ended callback drives the idle transition when TTS plays.

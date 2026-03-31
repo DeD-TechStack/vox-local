@@ -169,6 +169,9 @@ class Brain:
             },
         }
 
+        full_content = ""
+        is_action_stream = None
+        resp = None
         try:
             resp = requests.post(
                 f"{base_url}/api/chat",
@@ -177,9 +180,6 @@ class Brain:
                 stream=True,
             )
             resp.raise_for_status()
-
-            full_content = ""
-            is_action_stream = None
 
             for raw_line in resp.iter_lines():
                 if cancelled and cancelled():
@@ -209,11 +209,21 @@ class Brain:
                     break
 
         except requests.exceptions.ConnectionError:
+            # Pop the user message: it was appended before the request and must
+            # not remain in history when no assistant reply was recorded.
+            self.history.pop()
             return "Ollama is not running. Start it with: ollama serve", False
         except requests.exceptions.Timeout:
+            self.history.pop()
             return "Request timed out. Model may be overloaded.", False
         except Exception as e:
+            self.history.pop()
             return f"Error: {e}", False
+        finally:
+            # Always release the HTTP connection — important when the stream was
+            # cancelled mid-response or broken by an exception.
+            if resp is not None:
+                resp.close()
 
         if cancelled and cancelled():
             # Do not store partial output in history
@@ -221,6 +231,8 @@ class Brain:
             return "", False
 
         content = full_content.strip()
+        if not content:
+            log.warning("Brain: model returned empty content.")
 
         # Store a clean summary in history — avoid raw JSON blobs in memory
         history_content = content
@@ -229,8 +241,13 @@ class Brain:
             history_content = f"[action: {action_data.get('action', '?')}]"
 
         self.history.append({"role": "assistant", "content": history_content})
-        if len(self.history) > max_history:
-            self.history = self.history[-max_history:]
+
+        # Trim to max_history *turns*.  Each turn is one user + one assistant
+        # message (2 raw entries).  Trimming after a complete pair keeps the
+        # list properly paired so the oldest turn is always dropped atomically.
+        max_messages = max_history * 2
+        if len(self.history) > max_messages:
+            self.history = self.history[-max_messages:]
 
         return self._handle_response(content)
 
