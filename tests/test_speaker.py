@@ -197,3 +197,88 @@ class TestPiperErrorLogging:
             spk._speak_blocking("hello")
             error_calls = [str(c) for c in mock_log.error.call_args_list]
             assert any("exit" in c.lower() or "code" in c.lower() for c in error_calls)
+
+
+# ---------------------------------------------------------------------------
+# TTS truthfulness: speaking callbacks
+# ---------------------------------------------------------------------------
+
+class TestSpeakingCallbacks:
+    """on_speak_start must only fire when Piper succeeds and playback is starting.
+    on_speak_end must always fire to ensure the app returns to idle.
+    """
+
+    def test_on_speak_start_does_not_fire_on_piper_failure(self, tmp_path):
+        """When Piper exits non-zero, on_speak_start must NOT be called.
+        The app must never enter 'speaking' state for a failed synthesis."""
+        cfg = _make_config(tmp_path, {"tts_enabled": True})
+        spk = Speaker(cfg)
+
+        start_fired = []
+        end_fired   = []
+        spk.set_speaking_callbacks(
+            on_start=lambda: start_fired.append(True),
+            on_end=lambda: end_fired.append(True),
+        )
+
+        proc_mock = MagicMock()
+        proc_mock.returncode = 1
+        proc_mock.stderr = b"piper: model not found"
+
+        with patch("subprocess.run", return_value=proc_mock):
+            spk._speak_blocking("hello")
+
+        assert len(start_fired) == 0, "on_speak_start must not fire when Piper fails"
+        assert len(end_fired)   == 1, "on_speak_end must always fire for idle recovery"
+
+    def test_on_speak_start_fires_only_after_piper_succeeds(self, tmp_path):
+        """When Piper succeeds, on_speak_start fires once and on_speak_end fires once."""
+        cfg = _make_config(tmp_path, {"tts_enabled": True})
+        spk = Speaker(cfg)
+
+        start_fired = []
+        end_fired   = []
+        spk.set_speaking_callbacks(
+            on_start=lambda: start_fired.append(True),
+            on_end=lambda: end_fired.append(True),
+        )
+
+        # Write a real WAV that Piper "produces"
+        wav_src = _write_wav(str(tmp_path / "piper_out.wav"), framerate=22050, n_frames=100)
+
+        proc_mock = MagicMock()
+        proc_mock.returncode = 0
+        proc_mock.stderr = b""
+
+        def fake_run(cmd, **kwargs):
+            import shutil
+            out_file = cmd[cmd.index("--output_file") + 1]
+            shutil.copy(wav_src, out_file)
+            return proc_mock
+
+        with patch("subprocess.run", side_effect=fake_run), \
+             patch("sounddevice.play"), \
+             patch("sounddevice.wait"):
+            spk._speak_blocking("hello")
+
+        assert len(start_fired) == 1, "on_speak_start must fire exactly once on success"
+        assert len(end_fired)   == 1, "on_speak_end must fire exactly once on success"
+
+    def test_on_speak_end_fires_when_piper_not_found(self, tmp_path):
+        """FileNotFoundError (Piper binary missing) must not leave app stuck in a
+        non-idle state — on_speak_end must fire for idle recovery."""
+        cfg = _make_config(tmp_path, {"tts_enabled": True})
+        spk = Speaker(cfg)
+
+        start_fired = []
+        end_fired   = []
+        spk.set_speaking_callbacks(
+            on_start=lambda: start_fired.append(True),
+            on_end=lambda: end_fired.append(True),
+        )
+
+        with patch("subprocess.run", side_effect=FileNotFoundError("piper not found")):
+            spk._speak_blocking("hello")
+
+        assert len(start_fired) == 0, "on_speak_start must not fire when Piper is missing"
+        assert len(end_fired)   == 1, "on_speak_end must fire for idle recovery"

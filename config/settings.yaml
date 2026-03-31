@@ -25,7 +25,6 @@ app_aliases:
   steam: steam://open/main
   vs code: code
   vscode: code
-chunk_duration: 2.0
 language: pt
 max_history: 20
 mic_device: null

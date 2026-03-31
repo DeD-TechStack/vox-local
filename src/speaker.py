@@ -67,15 +67,10 @@ class Speaker:
     def _speak_blocking(self, text: str):
         # Re-read all TTS config values fresh on each call.
         # This means changes made in the Assistant tab take effect immediately.
-        piper_path   = self._resolve_path(self.config.get("piper_path",  "piper/piper/piper.exe"))
-        voice_model  = self._resolve_path(self.config.get("voice_model", "en_US-ryan-high.onnx"))
+        piper_path    = self._resolve_path(self.config.get("piper_path",  "piper/piper/piper.exe"))
+        voice_model   = self._resolve_path(self.config.get("voice_model", "en_US-ryan-high.onnx"))
         output_device = self.config.get("output_device", None)
 
-        if self._on_speak_start:
-            try:
-                self._on_speak_start()
-            except Exception:
-                pass
         try:
             with self._lock:
                 wav_path = None
@@ -102,6 +97,14 @@ class Speaker:
                         log.error("Piper exited successfully but produced no output file.")
                         return
 
+                    # Piper succeeded — notify that real audio playback is about to begin.
+                    # on_speak_start fires here, not earlier, so the app never reports
+                    # "speaking" when Piper has already failed before producing any audio.
+                    if self._on_speak_start:
+                        try:
+                            self._on_speak_start()
+                        except Exception:
+                            pass
                     self._play_wav(wav_path, output_device)
 
                 except FileNotFoundError:
@@ -114,6 +117,8 @@ class Speaker:
                     if wav_path and os.path.exists(wav_path):
                         os.unlink(wav_path)
         finally:
+            # on_speak_end always fires — ensures the app returns to idle even
+            # when Piper fails before on_speak_start was ever called.
             if self._on_speak_end:
                 try:
                     self._on_speak_end()

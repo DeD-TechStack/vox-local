@@ -34,6 +34,38 @@ def _make_config(tmp_path, extra: dict = None) -> Config:
 # Allowlist enforcement
 # ---------------------------------------------------------------------------
 
+class TestLiveAllowlistRead:
+    """run() must read allowed_actions from config on every call — no reload needed."""
+
+    def test_run_enforces_live_config_without_reload(self, tmp_path):
+        """Revoking an action in config takes effect on the next run() call,
+        without calling reload_config()."""
+        cfg = _make_config(tmp_path, {"allowed_actions": ["show_time"]})
+        ex = Executor(cfg)
+
+        # show_time is allowed initially
+        result = ex.run("show_time", {})
+        assert ":" in result
+
+        # Revoke it in-memory without calling reload_config()
+        cfg.set("allowed_actions", [])
+        result = ex.run("show_time", {})
+        assert "permitida" in result
+
+    def test_run_picks_up_newly_allowed_action_without_reload(self, tmp_path):
+        """Granting a new action in config takes effect on the next run() call."""
+        cfg = _make_config(tmp_path, {"allowed_actions": []})
+        ex = Executor(cfg)
+
+        # show_time is not allowed — denied
+        assert "permitida" in ex.run("show_time", {})
+
+        # Grant it in-memory without reload_config()
+        cfg.set("allowed_actions", ["show_time"])
+        result = ex.run("show_time", {})
+        assert ":" in result  # time string — action executed
+
+
 class TestReloadConfig:
     def test_reload_config_picks_up_new_allowed_actions(self, tmp_path):
         cfg = _make_config(tmp_path, {"allowed_actions": ["show_time"]})

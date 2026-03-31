@@ -1250,6 +1250,8 @@ class ActionsTab(_SettingsPanel):
         btn_row.addStretch()
         root.addLayout(btn_row)
 
+        root.addWidget(_apply_tag("Changes apply on the next voice command — no restart required.", _INFO))
+
         save_row, self._save_lbl, btn_save = self._save_row()
         root.addLayout(save_row)
 

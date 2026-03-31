@@ -260,11 +260,23 @@ def run_app(config: Config, whisper_model):
         def _open_legacy_settings(self):
             """Open the old settings dialog for quick single-field changes."""
             from ui.settings_dialog import SettingsDialog
+            prev_mode = config.get("activation_mode", "wake_word")
+            prev_ptt  = config.get("push_to_talk_key", "ctrl+shift")
             dlg = SettingsDialog(config)
             if dlg.exec():
                 self.speaker.reload_config()
                 self._apply_activation_mode_ui()
                 self.overlay.set_language_mode(config.get("language", "auto"))
+                # Activation mode and PTT key require a listener restart to take
+                # effect — same behaviour as the Activation tab in Control Center.
+                new_mode = config.get("activation_mode", "wake_word")
+                new_ptt  = config.get("push_to_talk_key", "ctrl+shift")
+                if new_mode != prev_mode or new_ptt != prev_ptt:
+                    log.info("Legacy settings: activation settings changed — restarting listener.")
+                    self.state.add_diagnostic(
+                        "info", "Activation settings changed — listener restarted."
+                    )
+                    self._restart_listener()
 
         # ── Listener lifecycle ────────────────────────────────────────────────
 

@@ -342,7 +342,7 @@ Check the **Directories** tab in the Control Center — verify the correct direc
 - **open_app on Linux** for plain executable names uses PATH directly. Apps not in PATH must be aliased with their full path in the **Aliases** tab.
 - **TTS interruption** is not implemented within a single response — Piper generates full audio before playback begins.
 - **Barge-in** (speaking while VOX is responding) cancels LLM generation but the in-flight TTS audio plays to completion.
-- **Speaking state** is truthfully tracked: the overlay shows "speaking" while Piper plays audio and transitions to "idle" only after playback finishes. When TTS is disabled, the transition to idle is immediate.
+- **Speaking state** reflects real playback: the overlay enters "speaking" only after Piper synthesis succeeds and audio playback is about to begin. If Piper fails (binary missing, model error, timeout), the app returns to idle without ever entering "speaking". When TTS is disabled, the transition to idle is immediate.
 - **Whisper settings** (`whisper_model`, `whisper_device`, `whisper_compute_type`) are not exposed in the Control Center UI — they require a YAML edit and application restart.
 
 ---
