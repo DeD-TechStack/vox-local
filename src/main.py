@@ -174,15 +174,12 @@ def run_app(config: Config, whisper_model):
         # ── Signal wiring ─────────────────────────────────────────────────────
 
         def _connect_listener_signals(self):
-            self.listener.listening_started.connect(self.overlay.set_listening)
+            # Listener status transitions drive AppState only; the overlay
+            # subscribes to state.status_changed via _on_status_changed.
             self.listener.listening_started.connect(
                 lambda: self.state.set_status("listening"))
-
-            self.listener.listening_stopped.connect(self.overlay.set_processing)
             self.listener.listening_stopped.connect(
                 lambda: self.state.set_status("transcribing"))
-
-            self.listener.monitoring_started.connect(self.overlay.set_monitoring)
             self.listener.monitoring_started.connect(
                 lambda: self.state.set_status("monitoring"))
 
@@ -190,31 +187,42 @@ def run_app(config: Config, whisper_model):
                 lambda level, msg: self.state.add_diagnostic(level, msg))
 
             self.listener.transcription_ready.connect(self.on_transcription)
-            self.listener.language_detected.connect(self.overlay.show_detected_language)
+            # Detected language flows through AppState so all subscribers update
+            # from one emission (overlay badge + Dashboard).
             self.listener.language_detected.connect(
                 self.state.detected_language_changed.emit)
 
-            # Real mic level → overlay waveform and AppState
+            # Real mic level → overlay waveform (direct — high-frequency) and AppState
             self.listener.mic_level.connect(self.overlay.set_mic_level)
             self.listener.mic_level.connect(self.state.set_mic_level)
 
         def _connect_signals(self):
             self._connect_listener_signals()
             self.overlay.language_clicked.connect(self.on_language_cycle)
-            self.overlay.set_language_mode(config.get("language", "auto"))
 
-            # Propagate AppState changes that the overlay still uses directly
+            # ── AppState → overlay ────────────────────────────────────────────
+            # All status-driven and content-driven overlay updates route through
+            # AppState signals.  The overlay subscribes here so main.py no longer
+            # needs to call overlay methods directly for every state transition.
+            self.state.status_changed.connect(self._on_status_changed)
+            self.state.transcript_changed.connect(self.overlay.set_transcript)
+            self.state.response_changed.connect(self.overlay.set_response)
+            self.state.last_action_changed.connect(self.overlay.set_action)
+            self.state.language_mode_changed.connect(self.overlay.set_language_mode)
+            self.state.detected_language_changed.connect(
+                self.overlay.show_detected_language)
             self.state.ollama_ok_changed.connect(self.overlay.set_ollama_ok)
 
-            # Control center actions
+            # Initialise language badge from current config
+            self.state.language_mode_changed.emit(config.get("language", "auto"))
+
+            # Control Center actions
             self.control_center.restart_listener_requested.connect(self._restart_listener)
             self.control_center.rerun_validation_requested.connect(self._rerun_validation)
-            # Language changes from the Assistant tab — keep overlay badge and
-            # AppState in sync without requiring a listener restart.
-            self.control_center.language_changed.connect(self.overlay.set_language_mode)
+            # Language changes from the Assistant tab flow through AppState so
+            # overlay badge and Dashboard both update from one emission.
             self.control_center.language_changed.connect(
-                lambda lang: self.state.language_mode_changed.emit(lang)
-            )
+                self.state.language_mode_changed.emit)
 
             # Speaking lifecycle — callbacks fire from Speaker's background thread.
             # We route through AppState signals so Qt queues the slot calls on the
@@ -223,9 +231,7 @@ def run_app(config: Config, whisper_model):
                 on_start=self.state.speaking_started.emit,
                 on_end=self.state.speaking_ended.emit,
             )
-            self.state.speaking_started.connect(self.overlay.set_speaking)
             self.state.speaking_started.connect(lambda: self.state.set_status("speaking"))
-            self.state.speaking_ended.connect(self.overlay.set_idle)
             self.state.speaking_ended.connect(lambda: self.state.set_status("idle"))
 
             # Ollama ping timer
@@ -238,6 +244,25 @@ def run_app(config: Config, whisper_model):
             mode = config.get("activation_mode", "wake_word")
             key  = config.get("push_to_talk_key", "ctrl+shift")
             self.overlay.set_footer_mode_with_key(mode, key)
+
+        def _on_status_changed(self, status: str):
+            """Route AppState status strings to the corresponding overlay visual state.
+
+            This is the single place that maps canonical status names to overlay
+            method calls, replacing the scattered parallel overlay + state writes
+            that previously appeared throughout the application code.
+            """
+            _map = {
+                "monitoring":   self.overlay.set_monitoring,
+                "listening":    self.overlay.set_listening,
+                "transcribing": self.overlay.set_processing,
+                "generating":   self.overlay.set_generating,
+                "speaking":     self.overlay.set_speaking,
+                "idle":         self.overlay.set_idle,
+            }
+            fn = _map.get(status)
+            if fn:
+                fn()
 
         # ── System tray ───────────────────────────────────────────────────────
 
@@ -275,7 +300,7 @@ def run_app(config: Config, whisper_model):
             # Refresh overlay footer and language badge to reflect whatever config
             # is now active (activation mode, PTT key, language).
             self._apply_activation_mode_ui()
-            self.overlay.set_language_mode(config.get("language", "auto"))
+            self.state.language_mode_changed.emit(config.get("language", "auto"))
             log.info("Listener restarted.")
             self.state.add_diagnostic("info", "Listener restarted.")
 
@@ -299,8 +324,8 @@ def run_app(config: Config, whisper_model):
                 ok = False
             if not ok:
                 log.warning("Ollama ping failed — LLM unavailable.")
+            # overlay updates via state.ollama_ok_changed → overlay.set_ollama_ok
             self.state.set_ollama_ok(ok)
-            self.overlay.set_ollama_ok(ok)
 
         # ── Language cycling ──────────────────────────────────────────────────
 
@@ -310,8 +335,7 @@ def run_app(config: Config, whisper_model):
             nxt     = order[(order.index(current) + 1) % len(order)] if current in order else "auto"
             config.set("language", nxt)
             config.save()
-            self.overlay.set_language_mode(nxt)
-            self.state.language_mode_changed.emit(nxt)
+            self.state.language_mode_changed.emit(nxt)  # overlay updates via signal
             log.info(f"Language switched to: {nxt}")
 
         # ── STT test callback (called from AudioTab worker thread) ───────────
@@ -344,11 +368,14 @@ def run_app(config: Config, whisper_model):
                 # well under 500 ms.  A full 2 s wait was blocking the Qt event
                 # loop unnecessarily and making barge-in feel unresponsive.
                 self._brain_worker.wait(500)
+                # "cancelled" is a transient visual — not routed through status_changed
+                # because it is immediately followed by "generating" and should not
+                # trigger the status dispatcher's overlay.set_generating call twice.
                 self.overlay.set_cancelled()
                 self.state.add_diagnostic("info", "Generation cancelled — new command received.")
 
-            self.overlay.set_transcript(text)
-            self.state.set_transcript(text)
+            # Transcript and status update: overlay subscribes via state signals.
+            self.state.set_transcript(text)    # → overlay.set_transcript via transcript_changed
             self.state.set_status("generating")
 
             # Advance the generation counter.  The lambda below captures the
@@ -361,7 +388,6 @@ def run_app(config: Config, whisper_model):
 
             self._brain_worker = BrainWorker(self.brain, text)
             self._brain_worker.token_received.connect(self.overlay.append_token)
-            self._brain_worker.generating_started.connect(self.overlay.set_generating)
             self._brain_worker.generating_started.connect(
                 lambda: self.state.set_status("generating"))
             self._brain_worker.response_ready.connect(
@@ -395,8 +421,7 @@ def run_app(config: Config, whisper_model):
                 # took effect is rejected by the lambda guard in on_transcription.
                 self._brain_generation += 1
                 self._brain_worker = None
-                self.overlay.set_idle()
-                self.state.set_status("idle")
+                self.state.set_status("idle")   # → overlay.set_idle via _on_status_changed
                 self.state.add_diagnostic("error", "Brain worker timed out after 35 s.")
 
         # ── Response ──────────────────────────────────────────────────────────
@@ -408,11 +433,11 @@ def run_app(config: Config, whisper_model):
             transcript = self.state.transcript
 
             if is_action:
-                self.overlay.set_action(response)
+                # overlay.set_action fires via last_action_changed signal
                 self.state.set_last_action(response)
                 self.state.add_history_entry(transcript, "", action=response)
             else:
-                self.overlay.set_response(response)
+                # overlay.set_response fires via response_changed signal
                 self.state.set_response(response)
                 # Skip history entry when the model returned nothing — an empty
                 # entry in session history is misleading and carries no information.
@@ -424,8 +449,7 @@ def run_app(config: Config, whisper_model):
             # When TTS is disabled OR the response is empty, speak() is a no-op
             # and speaking_ended never fires — go idle immediately in both cases.
             if not config.get("tts_enabled", True) or not response:
-                self.overlay.set_idle()
-                self.state.set_status("idle")
+                self.state.set_status("idle")   # → overlay.set_idle via _on_status_changed
 
         # ── Run ───────────────────────────────────────────────────────────────
 
