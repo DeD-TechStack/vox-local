@@ -254,7 +254,7 @@ def run_app(config: Config, whisper_model):
             menu.addAction("Control Center", self.control_center.show)
             menu.addAction("Show Overlay",   self.overlay.show)
             menu.addSeparator()
-            menu.addAction("Settings",       self._open_legacy_settings)
+            menu.addAction("Settings",       lambda: self.control_center.show_tab("Activation"))
             menu.addSeparator()
             menu.addAction("Quit",           self.app.quit)
 
@@ -265,29 +265,6 @@ def run_app(config: Config, whisper_model):
             )
             tray.show()
 
-        # ── Dialogs (legacy quick access) ─────────────────────────────────────
-
-        def _open_legacy_settings(self):
-            """Open the old settings dialog for quick single-field changes."""
-            from ui.settings_dialog import SettingsDialog
-            prev_mode = config.get("activation_mode", "wake_word")
-            prev_ptt  = config.get("push_to_talk_key", "ctrl+shift")
-            dlg = SettingsDialog(config)
-            if dlg.exec():
-                self.speaker.reload_config()
-                self._apply_activation_mode_ui()
-                self.overlay.set_language_mode(config.get("language", "auto"))
-                # Activation mode and PTT key require a listener restart to take
-                # effect — same behaviour as the Activation tab in Control Center.
-                new_mode = config.get("activation_mode", "wake_word")
-                new_ptt  = config.get("push_to_talk_key", "ctrl+shift")
-                if new_mode != prev_mode or new_ptt != prev_ptt:
-                    log.info("Legacy settings: activation settings changed — restarting listener.")
-                    self.state.add_diagnostic(
-                        "info", "Activation settings changed — listener restarted."
-                    )
-                    self._restart_listener()
-
         # ── Listener lifecycle ────────────────────────────────────────────────
 
         def _restart_listener(self):
@@ -296,9 +273,7 @@ def run_app(config: Config, whisper_model):
                 log.warning("Listener did not stop cleanly within 3 s — proceeding anyway.")
             self.listener.start()
             # Refresh overlay footer and language badge to reflect whatever config
-            # is now active (activation mode, PTT key, language).  Called here so
-            # that both the ControlCenter path and the legacy-settings path always
-            # leave the overlay in sync — no matter which surface triggered the restart.
+            # is now active (activation mode, PTT key, language).
             self._apply_activation_mode_ui()
             self.overlay.set_language_mode(config.get("language", "auto"))
             log.info("Listener restarted.")

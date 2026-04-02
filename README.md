@@ -137,7 +137,7 @@ VOX has two UI surfaces:
 |--------|-----|
 | Open Control Center | Double-click tray icon, or right-click → Control Center |
 | Show Overlay | Right-click → Show Overlay |
-| Open quick settings | Right-click → Settings |
+| Open Control Center (Activation tab) | Right-click → Settings |
 
 ### Voice interaction
 

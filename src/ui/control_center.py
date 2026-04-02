@@ -1694,7 +1694,22 @@ class ControlCenter(QMainWindow):
         tabs.addTab(DiagnosticsTab(app_state,
                                     validate_cb=self.rerun_validation_requested.emit), "Diagnostics")
 
+        self._tabs = tabs
         self.setCentralWidget(tabs)
+
+    def show_tab(self, tab_name: str) -> None:
+        """Show the Control Center with the named tab focused.
+
+        Called from the tray 'Settings' action to route directly to a
+        relevant section without opening a separate settings surface.
+        """
+        for i in range(self._tabs.count()):
+            if self._tabs.tabText(i) == tab_name:
+                self._tabs.setCurrentIndex(i)
+                break
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
